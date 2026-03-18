@@ -1,0 +1,90 @@
+/* ===== Default Dark Theme ===== */
+:root,
+body.theme-default {
+  --bg: #0d0d0d;
+  --surface: #1a1a1a;
+  --accent: #00e5ff;
+  --accent-hover: #00b8d4;
+  --text: #ffffff;
+  --text-secondary: #aaaaaa;
+  --btn-bg: #00e5ff;
+  --btn-text: #000000;
+  --danger: #ff4444;
+  --success: #00e676;
+  --font: system-ui, -apple-system, sans-serif;
+  --border-glow: none;
+  --card-border: 1px solid #333;
+  --scanline: none;
+}
+
+/* ===== PROTO7YPE Theme ===== */
+body.theme-prototype {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --accent: #00ffcc;
+  --accent-hover: #00ddb3;
+  --text: #ffffff;
+  --text-secondary: #88aa99;
+  --btn-bg: #00ffcc;
+  --btn-text: #000000;
+  --danger: #ff003c;
+  --success: #00ffcc;
+  --font: 'Share Tech Mono', monospace;
+  --border-glow: 0 0 8px #00ffcc44;
+  --card-border: 1px solid #00ffcc33;
+  --scanline: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 204, 0.03) 2px,
+    rgba(0, 255, 204, 0.03) 4px
+  );
+}
+
+body.theme-prototype::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--scanline);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ===== Glitch animation for PROTO7YPE ===== */
+@keyframes glitch {
+  0%   { text-shadow: 2px 0 #ff003c, -2px 0 #00ffcc; }
+  20%  { text-shadow: -2px 2px #ff003c, 2px -2px #00ffcc; }
+  40%  { text-shadow: 2px -2px #ff003c, -2px 2px #00ffcc; }
+  60%  { text-shadow: 0 2px #ff003c, 0 -2px #00ffcc; }
+  80%  { text-shadow: -2px 0 #ff003c, 2px 0 #00ffcc; }
+  100% { text-shadow: 2px 0 #ff003c, -2px 0 #00ffcc; }
+}
+
+@keyframes glitch-flicker {
+  0%, 100% { opacity: 1; }
+  41%      { opacity: 1; }
+  42%      { opacity: 0.8; }
+  43%      { opacity: 1; }
+  77%      { opacity: 1; }
+  78%      { opacity: 0.4; }
+  79%      { opacity: 1; }
+}
+
+body.theme-prototype .venue-name {
+  font-family: 'Share Tech Mono', monospace;
+  animation: glitch 3s infinite, glitch-flicker 4s infinite;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+/* Neon glow button hover for PROTO7YPE */
+body.theme-prototype .btn:hover,
+body.theme-prototype button:hover {
+  box-shadow: 0 0 15px var(--accent), 0 0 30px rgba(0, 255, 204, 0.3);
+}
+
+body.theme-prototype .card,
+body.theme-prototype .queue-item {
+  border: var(--card-border);
+  box-shadow: var(--border-glow);
+}

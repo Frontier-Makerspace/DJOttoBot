@@ -1,0 +1,7 @@
+node_modules/
+*.log
+autodj-state.json
+cache/
+*.webm
+.env
+.DS_Store

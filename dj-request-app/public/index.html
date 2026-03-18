@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Song Request</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="themes.css">
+  <link rel="stylesheet" href="guest.css">
+</head>
+<body class="theme-prototype">
+  <!-- Header -->
+  <header class="header">
+    <h1 class="venue-name">PROTO7YPE</h1>
+    <p class="venue-subtitle">Request a Song</p>
+  </header>
+
+  <!-- Search -->
+  <div class="search-container">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search for a song..." autocomplete="off">
+      <button id="searchBtn" class="btn">Search</button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results" class="results-grid"></div>
+
+  <!-- Loading -->
+  <div id="loading" class="loading hidden">Searching...</div>
+
+  <!-- Empty state -->
+  <div id="emptyState" class="empty-state">
+    <p>Search for a song to get started</p>
+  </div>
+
+  <!-- Request Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+      <button class="modal-close" id="modalClose">&times;</button>
+      <img id="modalThumb" class="modal-thumb" src="" alt="">
+      <h3 id="modalTitle" class="modal-title"></h3>
+      <p id="modalArtist" class="modal-artist"></p>
+      <p id="modalDuration" class="modal-duration"></p>
+      <input type="text" id="guestNameInput" class="guest-name-input" placeholder="Your name" autocomplete="off">
+      <button id="submitRequest" class="btn btn-large">Request This Song</button>
+    </div>
+  </div>
+
+  <!-- Confirmation Toast -->
+  <div id="toast" class="toast hidden">Request submitted! 🎵</div>
+
+  <!-- Queue Ticker -->
+  <div class="ticker-bar">
+    <div class="ticker-label">Now in queue:</div>
+    <div class="ticker-scroll" id="ticker"></div>
+  </div>
+
+  <script src="guest.js"></script>
+</body>
+</html>

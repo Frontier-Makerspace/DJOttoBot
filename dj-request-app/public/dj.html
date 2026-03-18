@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DJ Control Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="themes.css">
+  <link rel="stylesheet" href="dj.css">
+</head>
+<body class="theme-default">
+  <header class="dj-header">
+    <h1 class="dj-title venue-name">DJ Control Panel</h1>
+    <div class="header-controls">
+      <select id="themeSelect" class="theme-select">
+        <option value="theme-default">Default Dark</option>
+        <option value="theme-prototype">PROTO7YPE</option>
+      </select>
+    </div>
+  </header>
+
+  <main class="dj-main">
+    <div class="queue-stats" id="stats">
+      <span class="stat">Pending: <strong id="statPending">0</strong></span>
+      <span class="stat">Downloading: <strong id="statDownloading">0</strong></span>
+      <span class="stat">Done: <strong id="statDone">0</strong></span>
+      <span class="stat">Rejected: <strong id="statRejected">0</strong></span>
+    </div>
+
+    <div class="queue-container">
+      <table class="queue-table">
+        <thead>
+          <tr>
+            <th>Guest</th>
+            <th>Song</th>
+            <th>Artist</th>
+            <th>Duration</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="queueBody">
+          <tr class="empty-row">
+            <td colspan="6">No requests yet — waiting for guests...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="dj.js"></script>
+</body>
+</html>

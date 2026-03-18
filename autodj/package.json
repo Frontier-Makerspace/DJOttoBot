@@ -1,0 +1,15 @@
+{
+  "name": "autodj",
+  "version": "1.0.0",
+  "description": "24/7 AutoDJ bot for PROTO7YPE SF makerspace",
+  "main": "autodj.js",
+  "scripts": {
+    "start": "node autodj.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
+  }
+}
