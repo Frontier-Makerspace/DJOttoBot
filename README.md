@@ -56,13 +56,38 @@ curl -X POST http://localhost:3001/vibe -H "Content-Type: application/json" -d '
 curl -X POST http://localhost:3001/queue -H "Content-Type: application/json" -d '{"query":"Aphex Twin"}'
 ```
 
+### `visualizer/`
+Full-screen TV visualizer for ambient display. Designed for landscape TV via Chrome kiosk mode.
+
+- Audio-reactive canvas visualization (Web Audio API) with generative Lissajous fallback
+- Real-time track info, vibe badge, mode indicator, and guest request toasts via WebSocket
+- Vibe-aware color themes matching the autodj schedule
+- Glitch effects on track changes + periodic venue name glitch
+- PROTO7YPE branding with Share Tech Mono font
+
+**Run:**
+```bash
+cd visualizer && npm install && npm start
+# Open: http://localhost:3002
+# Kiosk: chrome --kiosk --app=http://localhost:3002
+```
+
+**WebSocket events forwarded from autodj (3001) and dj-request-app (3000):**
+- `nowPlaying` — `{ title, author, vibe, mode }`
+- `request` — `{ guestName, title }`
+- `queue` — queue array
+
+Falls back to polling `http://localhost:3001/status` every 5s.
+
 ## Setup (Mac Mini)
 
 1. Install dependencies: `brew install yt-dlp ffmpeg`
 2. Start request app: `cd dj-request-app && npm start`
 3. Start AutoDJ bot: `cd autodj && npm start`
-4. Point tablet browser to `http://[mac-mini-ip]:3000`
-5. Open DJ panel at `http://localhost:3000/dj`
+4. Start visualizer: `cd visualizer && npm start`
+5. Point tablet browser to `http://[mac-mini-ip]:3000`
+6. Open DJ panel at `http://localhost:3000/dj`
+7. Open visualizer on TV: Chrome kiosk to `http://localhost:3002`
 
 ## Requirements
 - macOS (uses `afplay` for audio)

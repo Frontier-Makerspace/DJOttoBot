@@ -1,0 +1,135 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
+  cursor: none;
+  font-family: 'Share Tech Mono', monospace;
+}
+
+#visualizer-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+}
+
+#venue-name {
+  position: fixed;
+  top: 32px;
+  left: 40px;
+  font-size: 28px;
+  color: #00ffcc;
+  letter-spacing: 0.3em;
+  opacity: 0.7;
+  z-index: 20;
+}
+
+#vibe-badge {
+  position: fixed;
+  top: 36px;
+  right: 40px;
+  font-size: 18px;
+  color: #00ffcc;
+  opacity: 0.6;
+  z-index: 20;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+#now-playing {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 10;
+}
+
+#track-title {
+  font-size: 72px;
+  color: #ffffff;
+  font-weight: bold;
+  text-shadow: 0 0 40px #00ffcc;
+  opacity: 1;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+#track-title.fade-out {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+#track-title.fade-in {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+#track-artist {
+  font-size: 32px;
+  color: #00ffcc;
+  margin-top: 16px;
+  opacity: 0.8;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+#track-artist.fade-out {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+#track-artist.fade-in {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+#clock {
+  position: fixed;
+  bottom: 32px;
+  right: 40px;
+  font-size: 48px;
+  color: #ffffff;
+  opacity: 0.4;
+  z-index: 20;
+}
+
+#request-toast {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: rgba(0, 255, 204, 0.13);
+  border: 1px solid #00ffcc;
+  border-radius: 8px;
+  padding: 12px 32px;
+  color: #00ffcc;
+  font-size: 22px;
+  z-index: 20;
+  transition: transform 0.4s ease, opacity 0.4s ease;
+  opacity: 0;
+  white-space: nowrap;
+}
+
+#request-toast.active {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+#mode-indicator {
+  position: fixed;
+  bottom: 36px;
+  left: 40px;
+  font-size: 16px;
+  color: #ffffff;
+  opacity: 0.3;
+  z-index: 20;
+  letter-spacing: 0.15em;
+}
