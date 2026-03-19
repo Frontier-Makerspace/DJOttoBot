@@ -1,7 +1,6 @@
-// ─── PROTO7YPE Visualizer ───────────────────────────────────────────────────
+// ─── PROTO7YPE Visualizer — Waterfall Edition ───────────────────────────────
 
 (() => {
-  // ─── DOM refs ───────────────────────────────────────────────────────────────
   const canvas = document.getElementById('visualizer-canvas');
   const ctx = canvas.getContext('2d');
   const titleEl = document.getElementById('track-title');
@@ -19,29 +18,44 @@
   let analyser = null;
   let dataArray = null;
 
-  const VIBE_COLORS = {
-    'Late Night':  { primary: '#7700ff', secondary: '#ff003c' },
-    'Morning':     { primary: '#00aaff', secondary: '#00ffcc' },
-    'Afternoon':   { primary: '#00ffcc', secondary: '#00e5ff' },
-    'Evening':     { primary: '#ff003c', secondary: '#7700ff' },
-    'Peak Hours':  { primary: '#ff003c', secondary: '#ffaa00' }
+  // Waterfall: offscreen buffer we scroll
+  let waterfallCanvas = document.createElement('canvas');
+  let wtx = waterfallCanvas.getContext('2d');
+
+  const VIBE_PALETTES = {
+    'Late Night':  [[0,0,0],    [30,0,80],   [120,0,180], [180,0,100], [255,0,60]],
+    'Morning':     [[0,0,0],    [0,20,60],   [0,80,160],  [0,180,220], [0,255,200]],
+    'Afternoon':   [[0,0,0],    [0,40,40],   [0,140,140], [0,220,200], [0,255,204]],
+    'Evening':     [[0,0,0],    [40,0,40],   [120,0,80],  [200,0,60],  [255,0,60]],
+    'Peak Hours':  [[0,0,0],    [60,0,0],    [180,20,0],  [255,100,0], [255,220,0]],
   };
 
-  function vibeColors() {
-    return VIBE_COLORS[currentVibe] || VIBE_COLORS['Afternoon'];
+  function getPalette() {
+    return VIBE_PALETTES[currentVibe] || VIBE_PALETTES['Afternoon'];
   }
 
-  function hexToRgb(hex) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return { r, g, b };
+  // Map 0-255 intensity to palette color
+  function intensityToColor(v) {
+    const palette = getPalette();
+    const t = v / 255 * (palette.length - 1);
+    const i = Math.floor(t);
+    const f = t - i;
+    const c0 = palette[Math.min(i, palette.length - 1)];
+    const c1 = palette[Math.min(i + 1, palette.length - 1)];
+    const r = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+    const g = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+    const b = Math.round(c0[2] + (c1[2] - c0[2]) * f);
+    return [r, g, b];
   }
 
   // ─── Canvas resize ──────────────────────────────────────────────────────────
   function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    waterfallCanvas.width = canvas.width;
+    waterfallCanvas.height = canvas.height;
+    wtx.fillStyle = 'black';
+    wtx.fillRect(0, 0, waterfallCanvas.width, waterfallCanvas.height);
   }
   window.addEventListener('resize', resize);
   resize();
@@ -49,61 +63,47 @@
   // ─── Clock ──────────────────────────────────────────────────────────────────
   function updateClock() {
     const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    clockEl.textContent = `${h}:${m}`;
+    clockEl.textContent =
+      String(now.getHours()).padStart(2,'0') + ':' +
+      String(now.getMinutes()).padStart(2,'0');
   }
   updateClock();
   setInterval(updateClock, 1000);
 
   // ─── Venue name glitch ──────────────────────────────────────────────────────
   const VENUE_TEXT = 'PROTO7YPE';
-  const GLITCH_CHARS = ['█', '▓', '░', '▒', '╳', '◼'];
+  const GLITCH_CHARS = ['█','▓','░','▒','╳','◼'];
 
   function glitchVenue() {
     const chars = VENUE_TEXT.split('');
-    const numGlitch = 1 + Math.floor(Math.random() * 2);
-    for (let i = 0; i < numGlitch; i++) {
-      const idx = Math.floor(Math.random() * chars.length);
-      chars[idx] = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
+    const n = 1 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < n; i++) {
+      chars[Math.floor(Math.random() * chars.length)] =
+        GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
     }
     venueEl.textContent = chars.join('');
-    setTimeout(() => { venueEl.textContent = VENUE_TEXT; }, 100);
+    setTimeout(() => { venueEl.textContent = VENUE_TEXT; }, 120);
   }
+  (function scheduleGlitch() {
+    setTimeout(() => { glitchVenue(); scheduleGlitch(); }, 8000 + Math.random() * 7000);
+  })();
 
-  function scheduleGlitch() {
-    const delay = 8000 + Math.random() * 7000; // 8-15s
-    setTimeout(() => {
-      glitchVenue();
-      scheduleGlitch();
-    }, delay);
-  }
-  scheduleGlitch();
-
-  // ─── Track change animation ─────────────────────────────────────────────────
+  // ─── Track change ───────────────────────────────────────────────────────────
   function setTrack(title, artist) {
     if (title === currentTitle) return;
     currentTitle = title;
-
-    // Fade out
     titleEl.classList.add('fade-out');
     artistEl.classList.add('fade-out');
-
     setTimeout(() => {
       titleEl.textContent = title || '';
       artistEl.textContent = artist || '';
       titleEl.classList.remove('fade-out');
-      artistEl.classList.remove('fade-in');
       titleEl.classList.add('fade-in');
       artistEl.classList.add('fade-in');
-
-      // Force reflow then remove fade-in to trigger transition
       void titleEl.offsetWidth;
       titleEl.classList.remove('fade-in');
       artistEl.classList.remove('fade-in');
     }, 400);
-
-    // Trigger canvas glitch
     triggerGlitch();
   }
 
@@ -113,270 +113,173 @@
     toastEl.textContent = `🎵 ${guestName} requested ${title}`;
     toastEl.classList.add('active');
     if (toastTimeout) clearTimeout(toastTimeout);
-    toastTimeout = setTimeout(() => {
-      toastEl.classList.remove('active');
-    }, 4000);
+    toastTimeout = setTimeout(() => toastEl.classList.remove('active'), 4000);
   }
 
   // ─── WebSocket ──────────────────────────────────────────────────────────────
   function connectWS() {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}`);
-
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'nowPlaying') {
           setTrack(msg.title, msg.author);
-          if (msg.vibe) {
-            currentVibe = msg.vibe;
-            vibeBadge.textContent = msg.vibe;
-          }
-          if (msg.mode) {
-            modeIndicator.textContent = msg.mode;
-          }
+          if (msg.vibe) { currentVibe = msg.vibe; vibeBadge.textContent = msg.vibe; }
+          if (msg.mode) modeIndicator.textContent = msg.mode;
         } else if (msg.type === 'request') {
           showToast(msg.guestName, msg.title);
         }
-      } catch (e) { /* ignore */ }
+      } catch (_) {}
     };
-
-    ws.onclose = () => {
-      setTimeout(connectWS, 3000);
-    };
-
-    ws.onerror = () => {
-      ws.close();
-    };
+    ws.onclose = () => setTimeout(connectWS, 3000);
+    ws.onerror = () => ws.close();
   }
   connectWS();
 
-  // ─── Audio setup ────────────────────────────────────────────────────────────
-  let audioCtx;
-
+  // ─── Audio ──────────────────────────────────────────────────────────────────
   async function initAudio() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioCtx = new AudioContext();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const audioCtx = new AudioContext();
       const source = audioCtx.createMediaStreamSource(stream);
       analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.8;
+      analyser.fftSize = 2048;          // more bins = better frequency resolution
+      analyser.smoothingTimeConstant = 0.5;
       source.connect(analyser);
       dataArray = new Uint8Array(analyser.frequencyBinCount);
       audioReactive = true;
-      console.log('Audio-reactive mode active');
-    } catch (e) {
-      console.log('No audio access, using generative mode');
+    } catch (_) {
       audioReactive = false;
     }
   }
   initAudio();
 
-  // ─── Particles ──────────────────────────────────────────────────────────────
-  const PARTICLE_COUNT = 60;
-  const particles = [];
-
-  function createParticle() {
-    return {
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 1.5,
-      vy: (Math.random() - 0.5) * 1.5,
-      size: 1.5 + Math.random() * 2.5,
-      colorIdx: Math.random() > 0.5 ? 0 : 1 // 0=primary, 1=secondary
-    };
-  }
-
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    particles.push(createParticle());
-  }
-
-  function updateParticles(bassEnergy) {
-    const speedMult = 1 + bassEnergy * 3;
-    for (const p of particles) {
-      p.x += p.vx * speedMult;
-      p.y += p.vy * speedMult;
-
-      // Bounce off edges
-      if (p.x < 0) { p.x = 0; p.vx = Math.abs(p.vx); }
-      if (p.x > canvas.width) { p.x = canvas.width; p.vx = -Math.abs(p.vx); }
-      if (p.y < 0) { p.y = 0; p.vy = Math.abs(p.vy); }
-      if (p.y > canvas.height) { p.y = canvas.height; p.vy = -Math.abs(p.vy); }
-    }
-  }
-
-  function drawParticles() {
-    const colors = vibeColors();
-    const cols = [colors.primary, colors.secondary];
-    for (const p of particles) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      ctx.fillStyle = cols[p.colorIdx];
-      ctx.globalAlpha = 0.6;
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  // ─── Glitch effect ──────────────────────────────────────────────────────────
+  // ─── Glitch on track change ─────────────────────────────────────────────────
   let glitchActive = false;
   let glitchEnd = 0;
+  function triggerGlitch() { glitchActive = true; glitchEnd = performance.now() + 800; }
 
-  function triggerGlitch() {
-    glitchActive = true;
-    glitchEnd = performance.now() + 800;
-  }
-
-  function drawGlitch() {
+  function applyGlitch() {
     if (!glitchActive) return;
-    if (performance.now() > glitchEnd) {
-      glitchActive = false;
-      return;
-    }
-
-    const sliceCount = 8 + Math.floor(Math.random() * 8);
-    const sliceHeight = Math.ceil(canvas.height / sliceCount);
-
-    for (let i = 0; i < sliceCount; i++) {
-      const y = i * sliceHeight;
-      const shift = (Math.random() - 0.5) * 40;
-      const imgData = ctx.getImageData(0, y, canvas.width, sliceHeight);
-      ctx.putImageData(imgData, shift, y);
+    if (performance.now() > glitchEnd) { glitchActive = false; return; }
+    const slices = 6 + Math.floor(Math.random() * 6);
+    const sh = Math.ceil(canvas.height / slices);
+    for (let i = 0; i < slices; i++) {
+      const y = i * sh;
+      const shift = (Math.random() - 0.5) * 50;
+      if (Math.random() > 0.5) {
+        const img = ctx.getImageData(0, y, canvas.width, sh);
+        ctx.putImageData(img, shift, y);
+      }
     }
   }
 
-  // ─── Audio-reactive visualization ───────────────────────────────────────────
-  function drawAudioReactive() {
-    analyser.getByteFrequencyData(dataArray);
+  // ─── WATERFALL ──────────────────────────────────────────────────────────────
+  // Each frame: scroll existing waterfall down 1-2px, draw new row at top
+  const ROW_HEIGHT = 2; // px per frame — controls scroll speed
 
-    const bufferLength = dataArray.length;
-    const centerX = canvas.width / 2;
-    const barWidth = (canvas.width / bufferLength) * 2.5;
-    const colors = vibeColors();
-    const primaryRgb = hexToRgb(colors.primary);
-    const secondaryRgb = hexToRgb(colors.secondary);
-
-    // Bass energy (first 8 bins)
-    let bassSum = 0;
-    for (let i = 0; i < 8; i++) bassSum += dataArray[i];
-    const bassEnergy = bassSum / (8 * 255);
-
-    updateParticles(bassEnergy);
-
-    // Draw bars mirrored from center
-    for (let i = 0; i < bufferLength; i++) {
-      const amplitude = dataArray[i] / 255;
-      const barHeight = amplitude * canvas.height * 0.6;
-
-      // Gradient color based on amplitude
-      const r = Math.round(primaryRgb.r + (secondaryRgb.r - primaryRgb.r) * amplitude);
-      const g = Math.round(primaryRgb.g + (secondaryRgb.g - primaryRgb.g) * amplitude);
-      const b = Math.round(primaryRgb.b + (secondaryRgb.b - primaryRgb.b) * amplitude);
-
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.globalAlpha = 0.7 + amplitude * 0.3;
-
-      // Right side
-      const xRight = centerX + i * barWidth * 0.5;
-      ctx.fillRect(xRight, canvas.height - barHeight, barWidth * 0.4, barHeight);
-
-      // Left side (mirrored)
-      const xLeft = centerX - i * barWidth * 0.5 - barWidth * 0.4;
-      ctx.fillRect(xLeft, canvas.height - barHeight, barWidth * 0.4, barHeight);
-    }
-
-    ctx.globalAlpha = 1;
-    drawParticles();
-  }
-
-  // ─── Generative fallback visualization ──────────────────────────────────────
+  // Generative fake spectrum when no audio
   let genTime = 0;
-
-  function drawGenerative(timestamp) {
-    genTime = timestamp * 0.001;
-
-    const colors = vibeColors();
-    const primaryRgb = hexToRgb(colors.primary);
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-
-    // Lissajous curve with morphing parameters
-    const a = 3 + Math.sin(genTime * 0.13) * 2;
-    const b = 2 + Math.cos(genTime * 0.17) * 1.5;
-    const delta = genTime * 0.3;
-    const scaleX = canvas.width * 0.3;
-    const scaleY = canvas.height * 0.3;
-
-    ctx.beginPath();
-    ctx.strokeStyle = colors.primary;
-    ctx.lineWidth = 2;
-    ctx.shadowColor = colors.primary;
-    ctx.shadowBlur = 20;
-    ctx.globalAlpha = 0.8;
-
-    for (let t = 0; t < Math.PI * 2; t += 0.01) {
-      const x = centerX + Math.sin(a * t + delta) * scaleX;
-      const y = centerY + Math.sin(b * t) * scaleY;
-      if (t === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+  function fakeSpectrum(bins) {
+    const out = new Uint8Array(bins);
+    const t = genTime;
+    for (let i = 0; i < bins; i++) {
+      const freq = i / bins;
+      // Bass hump
+      const bass = Math.max(0, 1 - freq * 6) * (0.5 + 0.5 * Math.sin(t * 1.1 + i * 0.05));
+      // Mid presence
+      const mid = Math.max(0, Math.sin(freq * Math.PI)) * (0.3 + 0.3 * Math.sin(t * 0.7 + i * 0.03));
+      // High sparkle
+      const hi = freq > 0.6 ? Math.max(0, Math.random() * 0.15 - 0.05) : 0;
+      // Slow drift
+      const drift = 0.15 + 0.15 * Math.sin(t * 0.3 + freq * 4);
+      const v = Math.min(1, bass + mid * 0.6 + hi + drift);
+      out[i] = Math.round(v * 255);
     }
-    ctx.stroke();
-
-    // Second Lissajous in secondary color
-    ctx.beginPath();
-    ctx.strokeStyle = colors.secondary;
-    ctx.shadowColor = colors.secondary;
-    ctx.lineWidth = 1.5;
-    ctx.globalAlpha = 0.5;
-
-    const a2 = 5 + Math.cos(genTime * 0.11) * 2;
-    const b2 = 3 + Math.sin(genTime * 0.19) * 1.5;
-    const delta2 = genTime * 0.2 + Math.PI * 0.5;
-
-    for (let t = 0; t < Math.PI * 2; t += 0.01) {
-      const x = centerX + Math.sin(a2 * t + delta2) * scaleX * 0.7;
-      const y = centerY + Math.sin(b2 * t) * scaleY * 0.7;
-      if (t === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
-
-    // Pulse ring
-    const pulseRadius = 80 + Math.sin(genTime * 2) * 30;
-    const pulseAlpha = 0.15 + Math.sin(genTime * 2) * 0.1;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, pulseRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = colors.primary;
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = pulseAlpha;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    // Simulated bass energy from sine for particles
-    const fakeBass = 0.3 + Math.sin(genTime * 1.5) * 0.2;
-    updateParticles(fakeBass);
-    drawParticles();
+    return out;
   }
 
-  // ─── Main render loop ──────────────────────────────────────────────────────
-  function draw(timestamp) {
-    // Motion blur trail
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  function drawWaterfall(freqData) {
+    const w = canvas.width;
+    const h = canvas.height;
+    const bins = freqData.length;
 
-    if (audioReactive && analyser) {
-      drawAudioReactive();
-    } else {
-      drawGenerative(timestamp);
+    // Scroll existing waterfall down by ROW_HEIGHT
+    wtx.drawImage(waterfallCanvas, 0, ROW_HEIGHT, w, h - ROW_HEIGHT);
+
+    // Draw new row at top
+    const imageData = wtx.createImageData(w, ROW_HEIGHT);
+    const d = imageData.data;
+
+    for (let x = 0; x < w; x++) {
+      const binIdx = Math.floor((x / w) * bins);
+      const v = freqData[binIdx];
+      const [r, g, b] = intensityToColor(v);
+
+      for (let row = 0; row < ROW_HEIGHT; row++) {
+        const idx = (row * w + x) * 4;
+        d[idx]     = r;
+        d[idx + 1] = g;
+        d[idx + 2] = b;
+        d[idx + 3] = 255;
+      }
     }
 
-    drawGlitch();
+    wtx.putImageData(imageData, 0, 0);
 
+    // Draw frequency axis labels (subtle, bottom of screen)
+    // Copy waterfall to main canvas
+    ctx.drawImage(waterfallCanvas, 0, 0);
+
+    // Overlay: faint frequency grid lines
+    const palette = getPalette();
+    const gridColor = `rgba(${palette[2][0]},${palette[2][1]},${palette[2][2]},0.15)`;
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 1;
+    const gridLines = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+    for (const f of gridLines) {
+      const x = Math.round(f * w);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+
+    // Freq labels at bottom
+    ctx.fillStyle = `rgba(${palette[3][0]},${palette[3][1]},${palette[3][2]},0.4)`;
+    ctx.font = '11px Share Tech Mono, monospace';
+    ctx.textAlign = 'center';
+    const labels = ['60Hz','120Hz','250Hz','500Hz','1kHz','2kHz','4kHz','8kHz','16kHz'];
+    labels.forEach((label, i) => {
+      const x = gridLines[i] * w;
+      ctx.fillText(label, x, h - 8);
+    });
+  }
+
+  // ─── Main loop ──────────────────────────────────────────────────────────────
+  let lastFrame = 0;
+  const TARGET_FPS = 30; // waterfall looks better at 30fps
+  const FRAME_MS = 1000 / TARGET_FPS;
+
+  function draw(timestamp) {
     requestAnimationFrame(draw);
+
+    const delta = timestamp - lastFrame;
+    if (delta < FRAME_MS) return;
+    lastFrame = timestamp - (delta % FRAME_MS);
+
+    genTime += delta * 0.001;
+
+    let freqData;
+    if (audioReactive && analyser) {
+      analyser.getByteFrequencyData(dataArray);
+      freqData = dataArray;
+    } else {
+      freqData = fakeSpectrum(512);
+    }
+
+    drawWaterfall(freqData);
+    applyGlitch();
   }
 
   requestAnimationFrame(draw);
