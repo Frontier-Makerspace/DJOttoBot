@@ -8,6 +8,56 @@
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="themes.css">
   <link rel="stylesheet" href="dj.css">
+  <style>
+    .mode-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1.5rem;
+      background: #0a0a0a;
+      border-bottom: 1px solid #222;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.8rem;
+    }
+    .mode-label { color: #666; margin-right: 0.5rem; }
+    .mode-btn {
+      padding: 0.3rem 0.8rem;
+      border: 1px solid #333;
+      border-radius: 4px;
+      background: #111;
+      color: #666;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-btn:hover { border-color: #555; color: #aaa; }
+    .mode-btn.active-BOT { background: #001a00; border-color: #0f8; color: #0f8; }
+    .mode-btn.active-ASSIST { background: #1a1400; border-color: #fa0; color: #fa0; }
+    .mode-btn.active-OVERRIDE { background: #1a0000; border-color: #f44; color: #f44; }
+    .mode-desc { color: #555; font-size: 0.72rem; margin-left: 0.5rem; }
+    .now-playing {
+      margin-left: auto;
+      color: #0af;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 300px;
+    }
+    .skip-btn {
+      padding: 0.3rem 0.7rem;
+      border: 1px solid #0af;
+      border-radius: 4px;
+      background: transparent;
+      color: #0af;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.75rem;
+      cursor: pointer;
+      margin-left: 0.5rem;
+    }
+    .skip-btn:hover { background: #001833; }
+  </style>
 </head>
 <body class="theme-default">
   <header class="dj-header">
@@ -19,6 +69,17 @@
       </select>
     </div>
   </header>
+
+  <!-- Mode Bar -->
+  <div class="mode-bar">
+    <span class="mode-label">MODE:</span>
+    <button class="mode-btn active-BOT" id="btnBOT" onclick="setMode('BOT')">🤖 BOT</button>
+    <button class="mode-btn" id="btnASSIST" onclick="setMode('ASSIST')">🎧 ASSIST</button>
+    <button class="mode-btn" id="btnOVERRIDE" onclick="setMode('OVERRIDE')">🎤 OVERRIDE</button>
+    <span class="mode-desc" id="modeDesc">Otto is in full control — requests auto-approved</span>
+    <span class="now-playing" id="nowPlaying">— nothing playing —</span>
+    <button class="skip-btn" onclick="skipTrack()">⏭ Skip</button>
+  </div>
 
   <main class="dj-main">
     <div class="queue-stats" id="stats">

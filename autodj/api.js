@@ -5,9 +5,17 @@ function createAPI(autodj) {
   app.use(express.json());
 
   app.get('/status', (req, res) => {
+    const ct = autodj.player.currentTrack;
+    let currentTrack = null;
+    if (ct) {
+      const path = require('path');
+      const basename = ct.filePath ? path.basename(ct.filePath, path.extname(ct.filePath)) : '';
+      const videoId = ct.videoId || (basename ? basename.split('_')[0] : null);
+      currentTrack = Object.assign({}, ct, { videoId });
+    }
     res.json({
       mode: autodj.mode,
-      currentTrack: autodj.player.currentTrack,
+      currentTrack,
       queueLength: autodj.playbackQueue.length,
       vibe: autodj.currentVibe,
       uptime: Math.floor((Date.now() - autodj.startedAt) / 1000),
@@ -39,9 +47,23 @@ function createAPI(autodj) {
   });
 
   app.post('/queue', async (req, res) => {
-    const { query } = req.body;
+    const { query, filePath, title, author, videoId, duration } = req.body;
+
+    // If filePath provided and file exists, inject directly — no re-download needed
+    if (filePath && require('fs').existsSync(filePath)) {
+      autodj.playbackQueue.unshift({
+        title: title || require('path').basename(filePath, '.mp3'),
+        author: author || 'Guest Request',
+        filePath,
+        videoId: videoId || null,
+        duration: duration || null,
+        source: 'request',
+      });
+      return res.json({ queued: title, position: 0, method: 'direct' });
+    }
+
     if (!query) {
-      return res.status(400).json({ error: 'query is required' });
+      return res.status(400).json({ error: 'query or filePath is required' });
     }
     try {
       const result = await autodj.downloader.searchAndDownload(query);

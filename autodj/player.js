@@ -2,6 +2,45 @@ const { EventEmitter } = require('events');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 
+const FFPROBE = '/opt/homebrew/bin/ffprobe';
+const FFMPEG = '/opt/homebrew/bin/ffmpeg';
+
+// BPM estimation by vibe/genre
+const VIBE_BPM = {
+  'Late Night':  [110, 130],
+  'Morning':     [75, 95],
+  'Afternoon':   [118, 130],
+  'Evening':     [120, 140],
+  'Peak Hours':  [130, 150],
+};
+
+function estimateBPM(vibeName) {
+  const range = VIBE_BPM[vibeName] || [100, 140];
+  return Math.floor(range[0] + Math.random() * (range[1] - range[0]));
+}
+
+// Try to detect BPM using ffmpeg astats (tempo estimation is not available in basic ffmpeg)
+// We use a combo: try aubiotrack if available, else fall back to vibe-based estimate
+async function detectBPM(filePath, vibeName) {
+  // Try aubio beat tracker
+  try {
+    const aubioBeat = execSync(`which aubiotrack 2>/dev/null || echo ""`, { encoding: 'utf8' }).trim();
+    if (aubioBeat) {
+      const out = execSync(`aubiotrack "${filePath}" 2>/dev/null | head -20`, { encoding: 'utf8', timeout: 10000 });
+      const beats = out.trim().split('\n').map(Number).filter(n => !isNaN(n) && n > 0);
+      if (beats.length >= 2) {
+        const intervals = [];
+        for (let i = 1; i < beats.length; i++) intervals.push(beats[i] - beats[i-1]);
+        const avgInterval = intervals.reduce((a,b)=>a+b,0) / intervals.length;
+        if (avgInterval > 0) return Math.round(60 / avgInterval);
+      }
+    }
+  } catch(_) {}
+
+  // Fall back to vibe-based estimate
+  return estimateBPM(vibeName);
+}
+
 class Player extends EventEmitter {
   constructor() {
     super();
@@ -21,19 +60,48 @@ class Player extends EventEmitter {
     }
   }
 
-  play(filePath, title) {
+  play(filePath, title, vibeName) {
     return new Promise((resolve, reject) => {
       if (this._playing) {
         this.stop();
       }
 
       const trackTitle = title || path.basename(filePath, path.extname(filePath));
+
+      // Get duration via ffprobe
+      let trackDuration = null;
+      try {
+        const probe = execSync(
+          `${FFPROBE} -v quiet -print_format json -show_format "${filePath}"`,
+          { timeout: 5000, encoding: 'utf8' }
+        );
+        const info = JSON.parse(probe);
+        trackDuration = parseFloat(info.format && info.format.duration) || null;
+      } catch(_) {}
+
+      // Extract videoId from filename (format: VIDEOID_title.mp3)
+      const basename = path.basename(filePath, path.extname(filePath));
+      const videoId = basename.split('_')[0] || null;
+
       this.currentTrack = {
         title: trackTitle,
         filePath,
         startedAt: new Date(),
-        duration: null,
+        duration: trackDuration,
+        videoId,
+        bpm: null, // will be filled async
       };
+
+      // Detect BPM asynchronously
+      detectBPM(filePath, vibeName || 'Afternoon').then(bpm => {
+        if (this.currentTrack && this.currentTrack.filePath === filePath) {
+          this.currentTrack.bpm = bpm;
+        }
+      }).catch(() => {
+        if (this.currentTrack && this.currentTrack.filePath === filePath) {
+          this.currentTrack.bpm = estimateBPM(vibeName || 'Afternoon');
+        }
+      });
 
       let proc;
       if (this._afplayAvailable) {

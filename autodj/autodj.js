@@ -69,14 +69,17 @@ class AutoDJ {
   }
 
   overrideVibe(vibeName) {
+    // Use vibe-schedules.js as source of truth for queries
+    const { getVibeForHour } = require('./vibe-schedules');
     const vibeMap = {
-      'Late Night': { queries: ['dark ambient electronic', 'EBM industrial late night', 'cold wave minimal synth'] },
-      'Morning': { queries: ['lo-fi hip hop chill', 'ambient electronic morning', 'downtempo chill beats'] },
-      'Afternoon': { queries: ['house music mix', 'deep house electronic', 'nu disco funky house'] },
-      'Evening': { queries: ['techno set', 'dark techno industrial', 'EBM electronic body music'] },
-      'Peak Hours': { queries: ['hard techno peak hour', 'industrial techno set', 'dark electro peak'] },
+      'Late Night': getVibeForHour(2),
+      'Morning': getVibeForHour(9),
+      'Afternoon': getVibeForHour(14),
+      'Evening': getVibeForHour(19),
+      'Peak Hours': getVibeForHour(22),
     };
-    this.vibeOverride = { name: vibeName, queries: vibeMap[vibeName].queries };
+    const vibe = vibeMap[vibeName] || getVibeForHour(new Date().getHours());
+    this.vibeOverride = { name: vibeName, queries: vibe.queries };
     this.currentVibe = this.vibeOverride;
     this.vibeQueryIndex = 0;
     log(`Vibe override: ${vibeName}`);
@@ -223,8 +226,7 @@ class AutoDJ {
     try {
       this.currentVibe = this.effectiveVibe;
       const queries = this.currentVibe.queries;
-      const query = queries[this.vibeQueryIndex % queries.length];
-      this.vibeQueryIndex++;
+      const query = queries[Math.floor(Math.random() * queries.length)] + " " + (Math.random() > 0.5 ? new Date().getFullYear() : "");
 
       const result = await this.downloader.searchAndDownload(query);
       this.predownloadedTrack = {
@@ -292,8 +294,7 @@ class AutoDJ {
             // Search YouTube
             try {
               const queries = this.currentVibe.queries;
-              const query = queries[this.vibeQueryIndex % queries.length];
-              this.vibeQueryIndex++;
+              const query = queries[Math.floor(Math.random() * queries.length)] + " " + (Math.random() > 0.5 ? new Date().getFullYear() : "");
               log(`Auto-picking: "${query}" (${this.currentVibe.name})`);
 
               const result = await this.downloader.searchAndDownload(query);
@@ -330,7 +331,7 @@ class AutoDJ {
           // Start pre-downloading next track in background
           this.predownloadNext();
 
-          await this.player.play(track.filePath, track.title);
+          await this.player.play(track.filePath, track.title, this.currentVibe && this.currentVibe.name);
 
           // Gap between tracks
           await sleep(TRACK_GAP_MS);

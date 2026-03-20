@@ -10,10 +10,16 @@
   const clockEl = document.getElementById('clock');
   const toastEl = document.getElementById('request-toast');
   const venueEl = document.getElementById('venue-name');
+  const bpmNumber = document.getElementById('bpm-number');
+  const albumArtBg = document.getElementById('album-art-bg');
+  const qrContainer = document.getElementById('qr-container');
+  const qrImg = document.getElementById('qr-img');
+  const roastToastEl = document.getElementById('roast-toast');
 
   // ─── State ──────────────────────────────────────────────────────────────────
   let currentVibe = 'Afternoon';
   let currentTitle = '';
+  let currentVideoId = null;
   let audioReactive = false;
   let analyser = null;
   let dataArray = null;
@@ -86,9 +92,73 @@
   }
   (function sg() { setTimeout(() => { glitchVenue(); sg(); }, 8000+Math.random()*7000); })();
 
+  // ─── BPM display ────────────────────────────────────────────────────────────
+  function updateBPM(bpm) {
+    if (!bpmNumber) return;
+    if (bpm) {
+      bpmNumber.textContent = bpm;
+      const pal = getPalette();
+      bpmNumber.style.color = pal.primary;
+      bpmNumber.style.textShadow = `0 0 18px ${pal.primary}, 0 0 6px ${pal.primary}`;
+    } else {
+      bpmNumber.textContent = '—';
+      bpmNumber.style.color = '';
+      bpmNumber.style.textShadow = '';
+    }
+  }
+
+  // ─── Album art background ────────────────────────────────────────────────────
+  function updateAlbumArt(videoId) {
+    if (!albumArtBg || !videoId) return;
+    if (videoId === currentVideoId) return;
+    currentVideoId = videoId;
+
+    // Fade out, swap, fade in
+    albumArtBg.classList.remove('visible');
+    setTimeout(() => {
+      const maxUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+      const hqUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        albumArtBg.style.backgroundImage = `url('${img.src}')`;
+        albumArtBg.classList.add('visible');
+      };
+      img.onerror = () => {
+        // Try hq fallback
+        const fallback = new Image();
+        fallback.crossOrigin = 'anonymous';
+        fallback.onload = () => {
+          albumArtBg.style.backgroundImage = `url('${fallback.src}')`;
+          albumArtBg.classList.add('visible');
+        };
+        fallback.src = hqUrl;
+      };
+      img.src = maxUrl;
+    }, 800);
+  }
+
+  // ─── QR Code ────────────────────────────────────────────────────────────────
+  let qrVideoId = null;
+  async function updateQR(videoId) {
+    if (!qrContainer || !qrImg || !videoId) return;
+    if (videoId === qrVideoId) return;
+    qrVideoId = videoId;
+    try {
+      const res = await fetch(`/api/qr?videoId=${encodeURIComponent(videoId)}`);
+      const data = await res.json();
+      if (data.dataUrl) {
+        qrImg.src = data.dataUrl;
+        qrContainer.style.display = 'block';
+      }
+    } catch(e) {
+      console.warn('QR fetch failed', e);
+    }
+  }
+
   // ─── Track change ───────────────────────────────────────────────────────────
-  function setTrack(title, artist) {
-    if (title === currentTitle) return;
+  function setTrack(title, artist, videoId, bpm) {
+    if (title === currentTitle && !videoId) return;
     currentTitle = title;
     titleEl.classList.add('fade-out'); artistEl.classList.add('fade-out');
     setTimeout(() => {
@@ -99,6 +169,12 @@
       titleEl.classList.remove('fade-in'); artistEl.classList.remove('fade-in');
     }, 400);
     triggerGlitch();
+
+    if (videoId) {
+      updateAlbumArt(videoId);
+      updateQR(videoId);
+    }
+    if (bpm) updateBPM(bpm);
   }
 
   // ─── Toast ──────────────────────────────────────────────────────────────────
@@ -110,6 +186,21 @@
     toastTO = setTimeout(() => toastEl.classList.remove('active'), 4000);
   }
 
+  // ─── Roast Toast ────────────────────────────────────────────────────────────
+  let roastTO = null;
+  function showRoastToast(msg) {
+    if (!roastToastEl) return;
+    roastToastEl.textContent = `😈 ${msg}`;
+    roastToastEl.classList.add('active');
+    if (roastTO) clearTimeout(roastTO);
+    roastTO = setTimeout(() => roastToastEl.classList.remove('active'), 7000);
+  }
+
+  // ─── Vibe Shift Toast ───────────────────────────────────────────────────────
+  function showVibeShiftToast(newVibe) {
+    showToast('Otto detected the vibe 🎵', `Shifting to ${newVibe}`);
+  }
+
   // ─── WebSocket ──────────────────────────────────────────────────────────────
   function connectWS() {
     const ws = new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}`);
@@ -117,11 +208,20 @@
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'nowPlaying') {
-          setTrack(msg.title, msg.author);
-          if (msg.vibe) { currentVibe = msg.vibe; vibeBadge.textContent = msg.vibe; }
+          setTrack(msg.title, msg.author, msg.videoId, msg.bpm);
+          const vibeName = (typeof msg.vibe === 'string') ? msg.vibe : (msg.vibe && msg.vibe.name);
+          if (vibeName) { currentVibe = vibeName; vibeBadge.textContent = vibeName; }
           if (msg.mode) modeIndicator.textContent = msg.mode;
+          if (msg.bpm) updateBPM(msg.bpm);
+          if (msg.videoId) { updateAlbumArt(msg.videoId); updateQR(msg.videoId); }
+          if (msg.startedAt) trackStartedAt = new Date(msg.startedAt).getTime();
+          if (msg.duration) trackDuration = msg.duration;
         } else if (msg.type === 'request') {
           showToast(msg.guestName, msg.title);
+        } else if (msg.type === 'otto_roast') {
+          showRoastToast(msg.reply);
+        } else if (msg.type === 'vibe_shift') {
+          showVibeShiftToast(msg.newVibe);
         }
       } catch(_){}
     };
@@ -129,6 +229,59 @@
     ws.onerror = () => ws.close();
   }
   connectWS();
+
+  // ─── Track Progress Bar ─────────────────────────────────────────────────────
+  const progressFill = document.getElementById('track-progress-fill');
+  const trackElapsed = document.getElementById('track-elapsed');
+  const trackRemaining = document.getElementById('track-remaining');
+
+  let trackStartedAt = null;
+  let trackDuration = null;
+
+  function fmt(secs) {
+    if (!secs || secs < 0) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function updateProgressBar() {
+    if (!trackStartedAt || !trackDuration || trackDuration <= 0) {
+      if (progressFill) progressFill.style.width = '0%';
+      return;
+    }
+    const elapsed = (Date.now() - trackStartedAt) / 1000;
+    const pct = Math.min(100, (elapsed / trackDuration) * 100);
+    const remaining = Math.max(0, trackDuration - elapsed);
+    if (progressFill) progressFill.style.width = pct + '%';
+    if (trackElapsed) trackElapsed.textContent = fmt(elapsed);
+    if (trackRemaining) trackRemaining.textContent = '-' + fmt(remaining);
+  }
+
+  setInterval(updateProgressBar, 1000);
+
+  // Poll autodj status for startedAt + duration + bpm + videoId
+  async function pollAutoDJStatus() {
+    try {
+      const res = await fetch('http://' + location.hostname + ':3001/status');
+      const data = await res.json();
+      if (data.currentTrack) {
+        trackStartedAt = data.currentTrack.startedAt ? new Date(data.currentTrack.startedAt).getTime() : null;
+        trackDuration = data.currentTrack.duration || null;
+        if (data.currentTrack.bpm) updateBPM(data.currentTrack.bpm);
+        if (data.currentTrack.videoId) {
+          updateAlbumArt(data.currentTrack.videoId);
+          updateQR(data.currentTrack.videoId);
+        }
+      } else {
+        trackStartedAt = null;
+        trackDuration = null;
+      }
+    } catch(_) {}
+  }
+  pollAutoDJStatus();
+  setInterval(pollAutoDJStatus, 5000);
+
 
   // ─── Audio ──────────────────────────────────────────────────────────────────
   async function initAudio() {

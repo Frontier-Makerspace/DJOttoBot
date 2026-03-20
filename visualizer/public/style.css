@@ -133,3 +133,35 @@ html, body {
   z-index: 20;
   letter-spacing: 0.15em;
 }
+
+/* ── Track Progress Bar ── */
+#track-progress-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  z-index: 30;
+}
+#track-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #00ffcc, #0af);
+  transition: width 1s linear;
+  box-shadow: 0 0 12px #00ffcc88;
+}
+#track-progress-times {
+  position: fixed;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 40px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.35);
+  font-family: 'Share Tech Mono', monospace;
+  z-index: 31;
+  pointer-events: none;
+}

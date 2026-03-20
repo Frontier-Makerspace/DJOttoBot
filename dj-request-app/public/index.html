@@ -8,13 +8,164 @@
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="themes.css">
   <link rel="stylesheet" href="guest.css">
+  <style>
+    /* ── Queue Panel ── */
+    .queue-panel {
+      margin: 1rem auto;
+      max-width: 700px;
+      background: var(--surface, #111);
+      border: 1px solid var(--border, #333);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .queue-panel h2 {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.8rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent, #0ff);
+      margin: 0;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border, #333);
+    }
+    .queue-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .queue-list li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid var(--border, #222);
+      font-size: 0.82rem;
+    }
+    .queue-list li:last-child { border-bottom: none; }
+    .queue-list .q-num {
+      color: var(--accent, #0ff);
+      font-family: 'Share Tech Mono', monospace;
+      min-width: 1.5rem;
+    }
+    .queue-list .q-title { flex: 1; color: var(--text-primary, #eee); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .queue-list .q-guest { color: var(--text-secondary, #888); font-size: 0.75rem; white-space: nowrap; }
+    .queue-list .q-status {
+      font-size: 0.7rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      background: #222;
+      color: #888;
+    }
+    .queue-list .q-status.pending { color: #fa0; background: #332200; }
+    .queue-list .q-status.downloading { color: #0af; background: #001833; }
+    .queue-list .q-status.done { color: #0f8; background: #001a0d; }
+    .queue-empty { padding: 1rem; color: var(--text-secondary, #666); font-size: 0.82rem; text-align: center; }
+
+    /* ── Otto Chat ── */
+    .otto-panel {
+      margin: 1rem auto;
+      max-width: 700px;
+      background: var(--surface, #111);
+      border: 1px solid var(--border, #333);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .otto-panel h2 {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.8rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent, #0ff);
+      margin: 0;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border, #333);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .otto-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #0f8;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .otto-messages {
+      height: 160px;
+      overflow-y: auto;
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .otto-msg {
+      font-size: 0.82rem;
+      line-height: 1.4;
+      padding: 0.4rem 0.7rem;
+      border-radius: 6px;
+      max-width: 85%;
+    }
+    .otto-msg.otto { background: #0a1a1a; color: #0ff; align-self: flex-start; border-left: 2px solid #0ff; }
+    .otto-msg.user { background: #1a1a0a; color: #fa0; align-self: flex-end; border-right: 2px solid #fa0; }
+    .otto-msg.system { color: #555; font-size: 0.75rem; align-self: center; font-style: italic; }
+    .otto-input-row {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.6rem 1rem;
+      border-top: 1px solid var(--border, #333);
+    }
+    .otto-input-row input {
+      flex: 1;
+      background: #0a0a0a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #eee;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.82rem;
+      padding: 0.4rem 0.6rem;
+    }
+    .otto-input-row input:focus { outline: none; border-color: var(--accent, #0ff); }
+    .otto-input-row button {
+      background: var(--accent, #0ff);
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.8rem;
+      padding: 0.4rem 0.8rem;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .otto-input-row button:disabled { opacity: 0.4; cursor: default; }
+  </style>
 </head>
 <body class="theme-prototype">
-  <!-- Header -->
   <header class="header">
     <h1 class="venue-name">PROTO7YPE</h1>
     <p class="venue-subtitle">Request a Song</p>
   </header>
+
+  <!-- Queue Panel -->
+  <div class="queue-panel">
+    <h2>🎵 Request Queue</h2>
+    <ul class="queue-list" id="queueList">
+      <li><span class="queue-empty">No requests yet</span></li>
+    </ul>
+  </div>
+
+  <!-- Otto Chat -->
+  <div class="otto-panel">
+    <h2><span class="otto-dot"></span>Talk to DJ Otto</h2>
+    <div class="otto-messages" id="ottoMessages">
+      <div class="otto-msg otto">Hey! I'm DJ Otto. Ask me what's playing, request a vibe, or just say what's up 🎧</div>
+    </div>
+    <div class="otto-input-row">
+      <input type="text" id="ottoInput" placeholder="Ask DJ Otto something..." autocomplete="off" maxlength="200">
+      <button id="ottoSend">Send</button>
+    </div>
+  </div>
 
   <!-- Search -->
   <div class="search-container">
@@ -24,18 +175,10 @@
     </div>
   </div>
 
-  <!-- Results -->
   <div id="results" class="results-grid"></div>
-
-  <!-- Loading -->
   <div id="loading" class="loading hidden">Searching...</div>
+  <div id="emptyState" class="empty-state"><p>Search for a song to get started</p></div>
 
-  <!-- Empty state -->
-  <div id="emptyState" class="empty-state">
-    <p>Search for a song to get started</p>
-  </div>
-
-  <!-- Request Modal -->
   <div id="modal" class="modal hidden">
     <div class="modal-overlay"></div>
     <div class="modal-content">
@@ -49,10 +192,8 @@
     </div>
   </div>
 
-  <!-- Confirmation Toast -->
   <div id="toast" class="toast hidden">Request submitted! 🎵</div>
 
-  <!-- Queue Ticker -->
   <div class="ticker-bar">
     <div class="ticker-label">Now in queue:</div>
     <div class="ticker-scroll" id="ticker"></div>

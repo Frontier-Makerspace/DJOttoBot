@@ -77,8 +77,9 @@ class Downloader {
 
   searchAndDownload(query) {
     return new Promise((resolve, reject) => {
+      // Search top 15, pick most-viewed result under 10 minutes
       const args = [
-        `ytsearch1:${query}`,
+        `ytsearch15:${query}`,
         '--dump-json',
         '--no-download',
         '--quiet',
@@ -89,17 +90,40 @@ class Downloader {
           return reject(new Error(`yt-dlp search failed: ${err.message}`));
         }
 
-        let info;
-        try {
-          info = JSON.parse(stdout);
-        } catch (e) {
-          return reject(new Error('Failed to parse yt-dlp search result'));
+        // Parse JSONL — pick most-viewed track under 10 min
+        const lines = stdout.trim().split('\n').filter(Boolean);
+        const all = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        const under10 = all.filter(v => v.duration && v.duration <= 600);
+        // Sort by view count descending (may be 0/null if not returned)
+        under10.sort((a, b) => (b.view_count || 0) - (a.view_count || 0));
+
+        let info = under10[0] || all[0]; // fallback to first result if nothing under 10 min
+
+        if (!info) {
+          return reject(new Error('No suitable tracks found'));
         }
 
         const videoId = info.id;
         const title = info.title || 'Unknown';
         const author = info.uploader || info.channel || 'Unknown';
         const duration = info.duration || 0;
+
+        // Skip tracks over 10 minutes (600 seconds)
+        if (duration > 600) {
+          const shortQuery = `${query} short track`;
+          const retryArgs = [`ytsearch3:${shortQuery}`, "--dump-json", "--no-download", "--flat-playlist", "--quiet"];
+          execFile(this.ytdlp, retryArgs, { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (err2, stdout2) => {
+            if (err2) return reject(new Error(`retry failed: ${err2.message}`));
+            const lines = stdout2.trim().split("\n").filter(Boolean);
+            const candidate = lines.map(l => { try { return JSON.parse(l); } catch { return null; } })
+              .filter(Boolean).find(v => v.duration && v.duration <= 600);
+            if (!candidate) return this.downloadTrack(videoId, title).then(fp => resolve({ videoId, title, author, duration, filePath: fp })).catch(reject);
+            this.downloadTrack(candidate.id, candidate.title || title)
+              .then(fp => resolve({ videoId: candidate.id, title: candidate.title || title, author: candidate.uploader || author, duration: candidate.duration, filePath: fp }))
+              .catch(reject);
+          });
+          return;
+        }
 
         this.downloadTrack(videoId, title)
           .then(filePath => {

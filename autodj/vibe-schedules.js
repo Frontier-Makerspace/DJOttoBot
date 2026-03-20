@@ -3,9 +3,9 @@ function getVibeForHour(hour) {
     return {
       name: 'Late Night',
       queries: [
-        'dark ambient electronic',
-        'EBM industrial late night',
+        'darkwave goth electronic',
         'cold wave minimal synth',
+        'dark ambient industrial',
       ],
     };
   }
@@ -33,9 +33,9 @@ function getVibeForHour(hour) {
     return {
       name: 'Evening',
       queries: [
-        'techno set',
-        'dark techno industrial',
-        'EBM electronic body music',
+        'darkwave goth electronic',
+        'EBM industrial electronic body music',
+        'goth industrial synthpop',
       ],
     };
   }
@@ -43,9 +43,9 @@ function getVibeForHour(hour) {
   return {
     name: 'Peak Hours',
     queries: [
-      'hard techno peak hour',
-      'industrial techno set',
-      'dark electro peak',
+      'hard EBM industrial peak',
+      'dark electro aggrotech',
+      'gothic industrial dance',
     ],
   };
 }

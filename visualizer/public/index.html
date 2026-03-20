@@ -8,11 +8,104 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <style>
+    /* Album art background */
+    #album-art-bg {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background-size: cover;
+      background-position: center;
+      filter: blur(40px) brightness(0.3);
+      opacity: 0;
+      transition: opacity 1.5s ease;
+    }
+    #album-art-bg.visible { opacity: 1; }
+
+    /* BPM display */
+    #bpm-display {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      text-align: center;
+      font-family: 'Share Tech Mono', monospace;
+      z-index: 20;
+      pointer-events: none;
+    }
+    #bpm-number {
+      font-size: 2.8rem;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 0 0 18px currentColor, 0 0 6px currentColor;
+      line-height: 1;
+      transition: color 0.8s ease;
+    }
+    #bpm-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.3em;
+      color: rgba(255,255,255,0.6);
+      margin-top: 2px;
+    }
+
+    /* QR code */
+    #qr-container {
+      position: fixed;
+      bottom: 55px;
+      left: 18px;
+      width: 120px;
+      height: 120px;
+      opacity: 0.6;
+      z-index: 20;
+      transition: opacity 0.3s;
+    }
+    #qr-container:hover { opacity: 0.9; }
+    #qr-container img {
+      width: 100%;
+      height: 100%;
+      border-radius: 6px;
+      background: rgba(0,0,0,0.5);
+    }
+
+    /* Roast toast */
+    #roast-toast {
+      position: fixed;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: linear-gradient(135deg, rgba(180,30,0,0.92), rgba(100,10,0,0.92));
+      border: 1px solid #ff4422;
+      color: #fff;
+      padding: 12px 22px;
+      border-radius: 10px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 1rem;
+      max-width: 500px;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.4s, transform 0.4s;
+      z-index: 50;
+      pointer-events: none;
+    }
+    #roast-toast.active {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
 </head>
 <body>
+  <!-- Album art blurred background -->
+  <div id="album-art-bg"></div>
+
   <canvas id="visualizer-canvas"></canvas>
   <div id="venue-name">PROTO7YPE</div>
   <div id="vibe-badge"></div>
+
+  <!-- BPM display top-right -->
+  <div id="bpm-display">
+    <div id="bpm-number">—</div>
+    <div id="bpm-label">BPM</div>
+  </div>
+
   <div id="now-playing">
     <div id="track-title"></div>
     <div id="track-artist"></div>
@@ -20,6 +113,20 @@
   <div id="mode-indicator">BOT</div>
   <div id="clock"></div>
   <div id="request-toast"></div>
+  <div id="roast-toast"></div>
+
+  <!-- QR Code bottom-left -->
+  <div id="qr-container" style="display:none">
+    <img id="qr-img" src="" alt="Scan to open on YouTube">
+  </div>
+
+  <div id="track-progress-bar">
+    <div id="track-progress-fill"></div>
+    <div id="track-progress-times">
+      <span id="track-elapsed">0:00</span>
+      <span id="track-remaining">0:00</span>
+    </div>
+  </div>
   <script src="visualizer.js"></script>
 </body>
 </html>

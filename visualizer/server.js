@@ -3,6 +3,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const fetch = require('node-fetch');
 const path = require('path');
+const QRCode = require('qrcode');
 
 const app = express();
 const server = http.createServer(app);
@@ -10,6 +11,23 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+// QR code endpoint
+app.get('/api/qr', async (req, res) => {
+  const { videoId } = req.query;
+  if (!videoId) return res.status(400).json({ error: 'videoId required' });
+  try {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const dataUrl = await QRCode.toDataURL(url, {
+      width: 200,
+      margin: 1,
+      color: { dark: '#ffffff', light: '#00000000' }
+    });
+    res.json({ dataUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Connected browser clients
 const clients = new Set();
@@ -37,7 +55,8 @@ function connectUpstream(url, label) {
     ws.on('message', (data) => {
       try {
         const msg = JSON.parse(data);
-        if (msg.type === 'nowPlaying' || msg.type === 'request' || msg.type === 'queue') {
+        if (msg.type === 'nowPlaying' || msg.type === 'request' || msg.type === 'queue'
+            || msg.type === 'otto_roast' || msg.type === 'vibe_shift') {
           broadcast(msg);
         }
       } catch (e) { /* ignore non-JSON */ }
@@ -56,18 +75,24 @@ function connectUpstream(url, label) {
 connectUpstream('ws://localhost:3000', 'dj-request-app');
 connectUpstream('ws://localhost:3001', 'autodj');
 
-// Poll autodj status as fallback
+// Poll autodj status as fallback — includes videoId and bpm
+let lastVideoId = null;
 setInterval(async () => {
   try {
     const res = await fetch('http://localhost:3001/status');
     const status = await res.json();
     if (status.currentTrack) {
+      const ct = status.currentTrack;
       broadcast({
         type: 'nowPlaying',
-        title: status.currentTrack.title || status.currentTrack.name,
-        author: status.currentTrack.author || status.currentTrack.artist,
-        vibe: status.vibe,
-        mode: status.mode
+        title: ct.title || ct.name,
+        author: ct.author || ct.artist,
+        vibe: status.vibe && status.vibe.name,
+        mode: status.mode,
+        videoId: ct.videoId,
+        bpm: ct.bpm,
+        startedAt: ct.startedAt,
+        duration: ct.duration,
       });
     }
   } catch (e) { /* autodj not available */ }
