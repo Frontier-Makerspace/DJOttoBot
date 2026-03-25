@@ -12,13 +12,17 @@ function createAPI(autodj) {
       const basename = ct.filePath ? path.basename(ct.filePath, path.extname(ct.filePath)) : '';
       const videoId = ct.videoId || (basename ? basename.split('_')[0] : null);
       
-      // Parse artist from title if available (format: "Artist - Title")
-      let artist = ct.artist || 'Unknown';
+      // Parse artist and title from ct.title if present (format: "Artist - Title")
+      let artist = 'Unknown';
       let title = ct.title || '';
-      if (!ct.artist && title.includes(' - ')) {
+      
+      if (title.includes(' - ')) {
         const parts = title.split(' - ');
         artist = parts[0].trim();
         title = parts.slice(1).join(' - ').trim();
+      } else {
+        // fallback to ct.artist if title doesn't contain " - "
+        artist = ct.artist || 'Unknown';
       }
       
       currentTrack = Object.assign({}, ct, { 
