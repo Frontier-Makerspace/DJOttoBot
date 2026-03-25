@@ -15,7 +15,6 @@ const LOG_FILE = path.join(MUSIC_DIR, 'autodj.log');
 const WS_URL = 'ws://localhost:3000';
 const API_PORT = 3001;
 const TRACK_GAP_MS = 2000;
-const RECENTLY_PLAYED_MAX = 50;
 
 // Ensure directories exist
 fs.mkdirSync(MUSIC_DIR, { recursive: true });
@@ -30,10 +29,6 @@ function log(msg) {
   } catch {}
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 class AutoDJ {
   constructor() {
     this.player = new Player();
@@ -44,28 +39,26 @@ class AutoDJ {
     this.startedAt = Date.now();
     this.currentVibe = getVibeForHour(new Date().getHours());
     this.vibeOverride = null;
+    this.vibeQueryIndex = 0;
     this.ws = null;
     this.wsConnected = false;
+    this.localFiles = [];
+    this.localFileIndex = 0;
+    this.ytFailCount = 0;
     this.running = false;
     this.predownloading = false;
     this.predownloadedTrack = null;
 
-    // Track recently played files to avoid repeats
-    this.recentlyPlayed = new Set();
-    this.recentlyPlayedQueue = [];
-
     this.player.on('started', (track) => {
-      log(`▶ Playing: ${track.title}`);
+      log(`Playing: ${track.title}`);
     });
     this.player.on('finished', (track) => {
-      log(`✓ Finished: ${track ? track.title : 'unknown'}`);
+      log(`Finished: ${track ? track.title : 'unknown'}`);
     });
     this.player.on('error', (err) => {
-      log(`✗ Player error: ${err.message}`);
+      log(`Player error: ${err.message}`);
     });
   }
-
-  // --- Mode management ---
 
   setMode(mode) {
     if (mode !== this.mode) {
@@ -76,17 +69,20 @@ class AutoDJ {
   }
 
   overrideVibe(vibeName) {
+    // Use vibe-schedules.js as source of truth for queries
+    const { getVibeForHour } = require('./vibe-schedules');
     const vibeMap = {
       'Late Night': getVibeForHour(2),
-      'Afternoon': getVibeForHour(9),
-      'Antenna Club': getVibeForHour(14),
+      'Morning': getVibeForHour(9),
+      'Afternoon': getVibeForHour(14),
       'Evening': getVibeForHour(19),
       'Peak Hours': getVibeForHour(22),
     };
     const vibe = vibeMap[vibeName] || getVibeForHour(new Date().getHours());
-    this.vibeOverride = vibe;
-    this.currentVibe = vibe;
-    log(`Vibe override: ${vibeName} (tags: ${vibe.tags.join(', ')})`);
+    this.vibeOverride = { name: vibeName, queries: vibe.queries };
+    this.currentVibe = this.vibeOverride;
+    this.vibeQueryIndex = 0;
+    log(`Vibe override: ${vibeName}`);
   }
 
   get effectiveVibe() {
@@ -94,91 +90,7 @@ class AutoDJ {
     return getVibeForHour(new Date().getHours());
   }
 
-  // --- Recently played tracking ---
-
-  markPlayed(filePath) {
-    if (!filePath || this.recentlyPlayed.has(filePath)) return;
-    this.recentlyPlayed.add(filePath);
-    this.recentlyPlayedQueue.push(filePath);
-    if (this.recentlyPlayedQueue.length > RECENTLY_PLAYED_MAX) {
-      const evicted = this.recentlyPlayedQueue.shift();
-      this.recentlyPlayed.delete(evicted);
-    }
-  }
-
-  // --- SearchEngine-based track selection ---
-
-  /**
-   * Pick a random track from the local library matching a random tag from the current vibe.
-   * Avoids recently played tracks. Returns track object or null.
-   */
-  pickLocalTrack() {
-    const vibe = this.effectiveVibe;
-    if (!vibe.tags || vibe.tags.length === 0) {
-      log(`Vibe "${vibe.name}" has no tags configured`);
-      return null;
-    }
-
-    // Pick a random tag
-    const tag = vibe.tags[Math.floor(Math.random() * vibe.tags.length)];
-    const searchEngine = this.downloader.searchEngine;
-
-    // Search with a low threshold to cast a wide net, then filter
-    const results = searchEngine.search(tag, 0.3);
-
-    if (!results || results.length === 0) {
-      log(`No results for tag "${tag}" in vibe "${vibe.name}"`);
-      return null;
-    }
-
-    // Filter out recently played
-    const fresh = results.filter(r => !this.recentlyPlayed.has(r.path));
-    const candidates = fresh.length > 0 ? fresh : results; // fall back to all if everything was recently played
-
-    // Pick a random track from top results (weighted toward higher confidence)
-    const topN = Math.min(candidates.length, 10);
-    const pick = candidates[Math.floor(Math.random() * topN)];
-
-    if (!pick || !fs.existsSync(pick.path)) {
-      log(`Picked track doesn't exist: ${pick ? pick.path : 'null'}`);
-      return null;
-    }
-
-    log(`🎵 Selected: "${pick.artist} - ${pick.title}" (tag: ${tag}, confidence: ${(pick.confidence * 100).toFixed(0)}%, vibe: ${vibe.name})`);
-
-    return {
-      title: `${pick.artist} - ${pick.title}`,
-      artist: pick.artist || 'Unknown',
-      filePath: pick.path,
-      source: 'local-search',
-      tag,
-      duration: null,
-    };
-  }
-
-  // --- Pre-load next track ---
-
-  async preloadNext() {
-    if (this.predownloading || this.predownloadedTrack) return;
-    if (this.playbackQueue.length > 0) return;
-    if (this.mode !== 'BOT') return;
-
-    this.predownloading = true;
-    try {
-      const track = this.pickLocalTrack();
-      if (track) {
-        this.predownloadedTrack = track;
-        log(`Pre-loaded next: "${track.title}"`);
-      }
-    } catch (err) {
-      log(`Pre-load failed: ${err.message}`);
-    } finally {
-      this.predownloading = false;
-    }
-  }
-
-  // --- WebSocket connection to dj-request-app ---
-
+  // WebSocket connection to dj-request-app
   connectWS() {
     const connect = () => {
       try {
@@ -218,7 +130,7 @@ class AutoDJ {
   }
 
   _handleWSMessage(msg) {
-    // Single item with status "done" = downloaded & approved request
+    // Queue update: item with status "done" means downloaded & approved
     if (msg.status === 'done' && msg.filePath) {
       const exists = this.playbackQueue.some(
         (t) => t.videoId === msg.videoId || t.filePath === msg.filePath
@@ -234,6 +146,12 @@ class AutoDJ {
         });
         log(`Queued request: ${msg.title}`);
       }
+    }
+
+    // Pre-fetch for "downloading" status
+    if (msg.status === 'downloading' && msg.videoId && !this.downloader.cache.has(msg.videoId)) {
+      log(`Pre-fetching: ${msg.title || msg.videoId}`);
+      this.downloader.downloadTrack(msg.videoId, msg.title).catch(() => {});
     }
 
     // Handle queue arrays
@@ -259,54 +177,149 @@ class AutoDJ {
     }
   }
 
-  // --- Main playback loop ---
+  // Scan local music files (excluding cache dir)
+  scanLocalFiles() {
+    this.localFiles = [];
+    const audioExts = ['.mp3', '.wav', '.aiff', '.m4a', '.flac'];
+    try {
+      const entries = fs.readdirSync(MUSIC_DIR);
+      for (const entry of entries) {
+        if (entry === 'cache' || entry === 'autodj-state.json' || entry === 'autodj.log') continue;
+        const fullPath = path.join(MUSIC_DIR, entry);
+        const stat = fs.statSync(fullPath);
+        if (stat.isFile() && audioExts.includes(path.extname(entry).toLowerCase())) {
+          this.localFiles.push(fullPath);
+        }
+      }
+      // Shuffle
+      for (let i = this.localFiles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [this.localFiles[i], this.localFiles[j]] = [this.localFiles[j], this.localFiles[i]];
+      }
+      this.localFileIndex = 0;
+      log(`Found ${this.localFiles.length} local files`);
+    } catch (err) {
+      log(`Error scanning local files: ${err.message}`);
+    }
+  }
 
+  getNextLocalFile() {
+    if (this.localFiles.length === 0) return null;
+    if (this.localFileIndex >= this.localFiles.length) {
+      this.localFileIndex = 0;
+      // Re-shuffle
+      for (let i = this.localFiles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [this.localFiles[i], this.localFiles[j]] = [this.localFiles[j], this.localFiles[i]];
+      }
+    }
+    return this.localFiles[this.localFileIndex++];
+  }
+
+  // Pre-download next track while current one plays
+  async predownloadNext() {
+    if (this.predownloading || this.predownloadedTrack) return;
+    if (this.playbackQueue.length > 0) return; // queue has items, no need
+    if (this.mode !== 'BOT') return;
+
+    this.predownloading = true;
+    try {
+      this.currentVibe = this.effectiveVibe;
+      const queries = this.currentVibe.queries.length > 0 ? this.currentVibe.queries : this.currentVibe.tags;
+      console.log("[DEBUG] vibe.queries:", this.currentVibe.queries, "vibe.tags:", this.currentVibe.tags);
+      const query = (queries[Math.floor(Math.random() * queries.length)] || "") + (Math.random() > 0.5 ? " " + new Date().getFullYear() : "");
+
+      const result = await this.downloader.searchAndDownload(query);
+      this.predownloadedTrack = {
+        title: result.title,
+        author: result.author,
+        filePath: result.filePath,
+        videoId: result.videoId,
+        duration: result.duration,
+        source: 'auto',
+      };
+      this.ytFailCount = 0;
+      log(`Pre-downloaded: ${result.title}`);
+    } catch (err) {
+      log(`Pre-download failed: ${err.message}`);
+      this.ytFailCount++;
+    }
+    this.predownloading = false;
+  }
+
+  // Main playback loop
   async mainLoop() {
     this.running = true;
     log(`AutoDJ started in ${this.mode} mode`);
-    log(`SearchEngine has ${this.downloader.searchEngine.index.length} tracks indexed`);
 
     while (this.running) {
       try {
-        // OVERRIDE mode: do nothing, wait
+        // OVERRIDE mode: do nothing
         if (this.mode === 'OVERRIDE') {
           await sleep(1000);
           continue;
         }
 
-        // ASSIST mode: only play from request queue
-        if (this.mode === 'ASSIST') {
-          if (this.playbackQueue.length === 0) {
-            await sleep(2000);
-            continue;
-          }
-        }
-
-        // Update current vibe
+        // Update vibe
         this.currentVibe = this.effectiveVibe;
 
         let track = null;
 
-        // Priority 1: User request queue
+        // 1. Check playback queue
         if (this.playbackQueue.length > 0) {
           track = this.playbackQueue.shift();
-          log(`📋 Playing from request queue: "${track.title}"`);
         }
-        // Priority 2: Pre-loaded track
+        // 2. Check pre-downloaded track
         else if (this.predownloadedTrack) {
           track = this.predownloadedTrack;
           this.predownloadedTrack = null;
-          log(`📦 Playing pre-loaded: "${track.title}"`);
         }
-        // Priority 3: Pick fresh from SearchEngine
+        // 3. BOT mode: auto-pick from YouTube
         else if (this.mode === 'BOT') {
-          track = this.pickLocalTrack();
+          if (this.ytFailCount >= 3) {
+            // Fall back to local files
+            log('YouTube failed 3x, falling back to local files');
+            const localFile = this.getNextLocalFile();
+            if (localFile) {
+              track = {
+                title: path.basename(localFile, path.extname(localFile)),
+                filePath: localFile,
+                source: 'local',
+              };
+            } else {
+              log('No local files available, waiting...');
+              await sleep(10000);
+              continue;
+            }
+          } else {
+            // Search YouTube
+            try {
+              const queries = this.currentVibe.queries;
+              const query = queries[Math.floor(Math.random() * queries.length)] + " " + (Math.random() > 0.5 ? new Date().getFullYear() : "");
+              log(`Auto-picking: "${query}" (${this.currentVibe.name})`);
 
-          if (!track) {
-            log(`No matching tracks found, retrying in 5s...`);
-            await sleep(5000);
-            continue;
+              const result = await this.downloader.searchAndDownload(query);
+              track = {
+                title: result.title,
+                author: result.author,
+                filePath: result.filePath,
+                videoId: result.videoId,
+                duration: result.duration,
+                source: 'auto',
+              };
+              this.ytFailCount = 0;
+            } catch (err) {
+              log(`Auto-pick failed: ${err.message}`);
+              this.ytFailCount++;
+              await sleep(2000);
+              continue;
+            }
           }
+        }
+        // 4. ASSIST mode: wait for requests
+        else if (this.mode === 'ASSIST') {
+          await sleep(10000);
+          continue;
         }
 
         // Play the track
@@ -316,34 +329,22 @@ class AutoDJ {
             continue;
           }
 
-          // Mark as recently played
-          this.markPlayed(track.filePath);
+          // Start pre-downloading next track in background
+          this.predownloadNext();
 
-          // Start pre-loading next track in background
-          this.preloadNext();
-
-          // Play and wait for completion
-          try {
-            await this.player.play(track.filePath, track.title, this.currentVibe.name);
-          } catch (err) {
-            log(`Playback error: ${err.message}`);
-            await sleep(2000);
-            continue;
-          }
+          await this.player.play(track.filePath, track.title, this.currentVibe && this.currentVibe.name);
 
           // Gap between tracks
           await sleep(TRACK_GAP_MS);
         }
-
       } catch (err) {
         log(`Main loop error: ${err.message}`);
-        await sleep(5000);
+        await sleep(2000);
       }
     }
   }
 
-  // --- State writer ---
-
+  // Write state file periodically
   startStateWriter() {
     setInterval(() => {
       const state = {
@@ -351,7 +352,7 @@ class AutoDJ {
         currentTrack: this.player.currentTrack,
         queue: this.playbackQueue.map((t) => ({
           title: t.title,
-          author: t.author || t.artist,
+          author: t.author,
           source: t.source,
           videoId: t.videoId,
         })),
@@ -365,12 +366,12 @@ class AutoDJ {
     }, 30000);
   }
 
-  // --- Start everything ---
-
+  // Start everything
   async start() {
     log('=== AutoDJ Starting ===');
-    log(`Library: ${this.downloader.searchEngine.index.length} tracks indexed`);
-    log(`Vibe: ${this.effectiveVibe.name} (tags: ${this.effectiveVibe.tags.join(', ')})`);
+
+    // Scan local files
+    this.scanLocalFiles();
 
     // Connect to request app
     this.connectWS();
@@ -384,13 +385,19 @@ class AutoDJ {
     // Start state writer
     this.startStateWriter();
 
+    // Rescan local files every 5 minutes
+    setInterval(() => this.scanLocalFiles(), 5 * 60 * 1000);
+
     // Start main loop
     await this.mainLoop();
   }
 }
 
-// --- Run ---
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
+// Run
 const dj = new AutoDJ();
 dj.start().catch((err) => {
   log(`Fatal error: ${err.message}`);

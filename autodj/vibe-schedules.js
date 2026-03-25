@@ -3,7 +3,7 @@ function getVibeForHour(hour) {
     return {
       name: 'Late Night',
       localOnly: true,
-      tags: ['goth', 'industrial', 'shoegaze', 'ebm', 'darkwave', 'dark wave', 'post-punk', 'cold wave'],
+      tags: ['KMFDM', 'Depeche Mode', 'Nine Inch Nails'],
       queries: [],
     };
   }
@@ -11,7 +11,7 @@ function getVibeForHour(hour) {
     return {
       name: 'Afternoon',
       localOnly: true,
-      tags: ['house', 'deep house', 'nu disco'],
+      tags: ['Antenna', 'Corey Hart', 'Duran Duran'],
       queries: [],
     };
   }
@@ -19,7 +19,7 @@ function getVibeForHour(hour) {
     return {
       name: 'Antenna Club',
       localOnly: true,
-      tags: ['80s', 'antenna'],
+      tags: ['Antenna', 'Covenant', 'Assemblage 23'],
       queries: [],
     };
   }
@@ -27,7 +27,7 @@ function getVibeForHour(hour) {
     return {
       name: 'Evening',
       localOnly: true,
-      tags: ['goth', 'industrial', 'shoegaze', 'ebm', 'darkwave', 'dark wave', 'post-punk', 'cold wave'],
+      tags: ['Antenna', 'Front 242', 'Combichrist'],
       queries: [],
     };
   }
@@ -35,7 +35,7 @@ function getVibeForHour(hour) {
   return {
     name: 'Peak Hours',
     localOnly: true,
-    tags: ['hard techno', 'industrial', 'dark industrial'],
+    tags: ['KMFDM', 'Front 242', 'Covenant'],
     queries: [],
   };
 }

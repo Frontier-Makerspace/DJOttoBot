@@ -127,7 +127,7 @@ class SearchEngine {
       const searchCandidates = [
         `${track.artist} - ${track.title}`,
         track.title,
-        track.filename,
+        track.filename, track.path.split('/').slice(-2)[0],  // folder
       ];
 
       let bestScore = 0;
