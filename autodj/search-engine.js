@@ -28,9 +28,41 @@ function similarityScore(a, b) {
   return 1.0 - distance / maxLen;
 }
 
+/**
+ * Score how well a query matches a candidate string.
+ * Uses multiple strategies: exact contains, word-boundary match, Levenshtein.
+ * Returns 0.0–1.0
+ */
+function matchScore(query, candidate) {
+  const q = query.toLowerCase().trim();
+  const c = candidate.toLowerCase().trim();
+
+  if (!q || !c) return 0;
+
+  // Exact match
+  if (q === c) return 1.0;
+
+  // Exact substring (query appears in candidate or vice versa)
+  if (c.includes(q)) return 0.95;
+  if (q.includes(c)) return 0.9;
+
+  // Levenshtein on the full strings
+  const fullSim = similarityScore(q, c);
+
+  // Also try Levenshtein on individual words of the candidate
+  const candidateWords = c.split(/[\s\-_/]+/).filter(w => w.length > 1);
+  let bestWordSim = 0;
+  for (const word of candidateWords) {
+    const ws = similarityScore(q, word);
+    if (ws > bestWordSim) bestWordSim = ws;
+  }
+
+  // Return the best score from any method
+  return Math.max(fullSim, bestWordSim);
+}
+
 class SearchEngine {
   constructor(libraryPaths = []) {
-    // Default to the AutoDJ music locations if not specified
     if (!libraryPaths || libraryPaths.length === 0) {
       const home = os.homedir();
       libraryPaths = [
@@ -38,7 +70,7 @@ class SearchEngine {
         path.join(home, 'Music', 'Library'),
         path.join(home, 'Music', 'MP3'),
         path.join(home, 'Music', 'MP3s'),
-        path.join(home, 'Music', 'Ripped MP3'), // New organized folder
+        path.join(home, 'Music', 'Ripped MP3'),
       ];
     }
     this.libraryPaths = libraryPaths.filter(p => fs.existsSync(p));
@@ -78,16 +110,16 @@ class SearchEngine {
 
     let totalMp3s = 0;
     for (const libPath of this.libraryPaths) {
-      const mpgFiles = walk(libPath);
-      console.log(`[SearchEngine] Found ${mpgFiles.length} MP3s in ${libPath}`);
-      totalMp3s += mpgFiles.length;
+      const mp3Files = walk(libPath);
+      console.log(`[SearchEngine] Found ${mp3Files.length} MP3s in ${libPath}`);
+      totalMp3s += mp3Files.length;
 
-      for (const filePath of mpgFiles) {
+      for (const filePath of mp3Files) {
         try {
-          // Extract metadata from filename/path
           const baseName = path.basename(filePath, '.mp3');
-          
-          // Try to parse: "Artist - Title" or just "Title"
+          const folder = path.basename(path.dirname(filePath));
+
+          // Parse "Artist - Title" or just "Title"
           let artist = 'Unknown', title = baseName;
           const match = baseName.match(/^(.+?)\s*-\s*(.+)$/);
           if (match) {
@@ -102,6 +134,7 @@ class SearchEngine {
             album: 'Unknown',
             genre: 'Unknown',
             filename: baseName,
+            folder,
           });
         } catch (e) {
           // Skip indexing errors
@@ -113,28 +146,31 @@ class SearchEngine {
     console.log(`[SearchEngine] Index rebuilt: ${this.index.length} total tracks`);
   }
 
-  search(query, minScore = 0.6) {
+  /**
+   * Search the library for tracks matching a query.
+   * @param {string} query - Search term (artist name, song title, genre folder, etc.)
+   * @param {number} minScore - Minimum match score (0.0–1.0), default 0.5
+   * @returns {Array} Matching tracks sorted by confidence (descending)
+   */
+  search(query, minScore = 0.5) {
     // Rebuild if stale
     if (Date.now() - this.lastRebuild > this.rebuildInterval) {
       this.rebuildIndex();
     }
 
-    const queryLower = query.toLowerCase();
     const results = [];
 
     for (const track of this.index) {
-      // Match on: "Artist - Title" or just Title or filename
-      const searchCandidates = [
-        `${track.artist} - ${track.title}`,
-        track.title,
-        track.filename, track.path.split('/').slice(-2)[0],  // folder
+      // Score against multiple fields
+      const scores = [
+        matchScore(query, track.artist),
+        matchScore(query, track.title),
+        matchScore(query, track.filename),
+        matchScore(query, track.folder),
+        matchScore(query, `${track.artist} - ${track.title}`),
       ];
 
-      let bestScore = 0;
-      for (const candidate of searchCandidates) {
-        const score = similarityScore(candidate, queryLower);
-        if (score > bestScore) bestScore = score;
-      }
+      const bestScore = Math.max(...scores);
 
       if (bestScore >= minScore) {
         results.push({
@@ -148,6 +184,9 @@ class SearchEngine {
     return results;
   }
 
+  /**
+   * Return the single best match for a query, or null.
+   */
   searchBest(query) {
     const results = this.search(query, 0.5);
     return results.length > 0 ? results[0] : null;

@@ -124,7 +124,7 @@ class AutoDJ {
     const searchEngine = this.downloader.searchEngine;
 
     // Search with a low threshold to cast a wide net, then filter
-    const results = searchEngine.search(tag, 0.3);
+    const results = searchEngine.search(tag, 0.7);
 
     if (!results || results.length === 0) {
       log(`No results for tag "${tag}" in vibe "${vibe.name}"`);
