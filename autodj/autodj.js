@@ -163,6 +163,7 @@ class AutoDJ {
     if (this.predownloading || this.predownloadedTrack) return;
     if (this.playbackQueue.length > 0) return;
     if (this.mode !== 'BOT') return;
+    if (!this.player.isPlaying()) return; // Only preload while something is actively playing
 
     this.predownloading = true;
     try {
