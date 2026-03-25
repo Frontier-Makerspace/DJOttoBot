@@ -17,6 +17,30 @@
     OVERRIDE: '🎤 Live DJ has the floor — Otto is paused',
   };
 
+  // --- Vibe Control ---
+  const vibeSelect = document.getElementById('vibeSelect');
+  window.setVibe = async function(vibe) {
+    try {
+      if (!vibe) {
+        // Empty string means auto
+        console.log('Vibe set to auto (by time)');
+        vibeSelect.value = '';
+        return;
+      }
+      await fetch('http://' + location.hostname + ':3001/vibe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vibe })
+      });
+      console.log('Vibe changed to:', vibe);
+    } catch (e) {
+      console.error('Vibe change failed:', e);
+    }
+  };
+  vibeSelect.addEventListener('change', () => {
+    setVibe(vibeSelect.value);
+  });
+
   // --- Theme ---
   const savedTheme = localStorage.getItem('dj-theme') || 'theme-default';
   document.body.className = savedTheme;

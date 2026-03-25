@@ -77,6 +77,19 @@
     <button class="mode-btn" id="btnASSIST" onclick="setMode('ASSIST')">🎧 ASSIST</button>
     <button class="mode-btn" id="btnOVERRIDE" onclick="setMode('OVERRIDE')">🎤 OVERRIDE</button>
     <span class="mode-desc" id="modeDesc">Otto is in full control — requests auto-approved</span>
+    
+    <span style="margin-left: 1rem; color: #666;">|</span>
+    <span class="mode-label" style="margin-left: 1rem;">VIBE:</span>
+    <select id="vibeSelect" style="padding: 0.3rem 0.5rem; background: #111; color: #0af; border: 1px solid #0af; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; cursor: pointer;">
+      <option value="">Auto (by time)</option>
+      <option value="Late Night">🌙 Late Night</option>
+      <option value="Morning">🌅 Morning</option>
+      <option value="Afternoon">☀️ Afternoon</option>
+      <option value="Evening">🌆 Evening</option>
+      <option value="Peak Hours">⚡ Peak Hours</option>
+      <option value="Antenna Club">📻 Antenna Club</option>
+    </select>
+    
     <span class="now-playing" id="nowPlaying">— nothing playing —</span>
     <button class="skip-btn" onclick="skipTrack()">⏭ Skip</button>
   </div>
