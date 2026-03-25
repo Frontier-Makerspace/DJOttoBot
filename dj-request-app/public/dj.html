@@ -90,19 +90,51 @@
       <option value="Antenna Club">📻 Antenna Club</option>
     </select>
     
+    <!-- Party Mode Panel -->
     <span style="margin-left: 1rem; color: #666;">|</span>
-    <span class="mode-label" style="margin-left: 1rem;">PARTY MODE:</span>
-    <label style="display: flex; align-items: center; gap: 0.3rem; cursor: pointer; color: #666; font-size: 0.75rem;">
-      <input type="checkbox" id="partyModeCheck" style="cursor: pointer;">
-      <span>Block Time</span>
-    </label>
-    <input type="time" id="partyStartTime" style="padding: 0.3rem 0.5rem; background: #111; color: #0af; border: 1px solid #333; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; width: 70px; display: none;">
-    <span style="color: #666; font-size: 0.75rem; display: none;" id="partyTimeSeparator">→</span>
-    <input type="time" id="partyEndTime" style="padding: 0.3rem 0.5rem; background: #111; color: #0af; border: 1px solid #333; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; width: 70px; display: none;">
-    <button id="partySetBtn" style="padding: 0.3rem 0.7rem; border: 1px solid #f44; border-radius: 4px; background: transparent; color: #f44; font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; cursor: pointer; margin-left: 0.3rem; display: none;">Set</button>
+    <button id="partyToggleBtn" onclick="togglePartyPanel()" style="padding: 0.3rem 0.8rem; border: 1px solid #f44; border-radius: 4px; background: transparent; color: #f44; font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; cursor: pointer; margin-left: 0.5rem;">🎉 PARTY MODE</button>
+    <span id="partyStatusBadge" style="color: #555; font-size: 0.7rem; margin-left: 0.3rem;"></span>
     
     <span class="now-playing" id="nowPlaying">— nothing playing —</span>
     <button class="skip-btn" onclick="skipTrack()">⏭ Skip</button>
+  </div>
+
+  <!-- Party Mode Panel (hidden by default) -->
+  <div id="partyPanel" style="display: none; padding: 0.8rem 1.5rem; background: linear-gradient(135deg, #1a0000, #0a0a0a); border-bottom: 1px solid #f44; font-family: 'Share Tech Mono', monospace; font-size: 0.8rem;">
+    <div style="display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 200px;">
+        <label style="color: #f44; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em;">Event Name</label>
+        <input type="text" id="partyName" placeholder="e.g. GRACIE RAVE" style="padding: 0.4rem 0.6rem; background: #111; color: #fff; border: 1px solid #333; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.85rem;">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 0.3rem; flex: 1.5; min-width: 250px;">
+        <label style="color: #f44; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em;">Tagline</label>
+        <input type="text" id="partyTagline" placeholder="e.g. The world premiere of DJ Otto, the world's first OpenClaw DJ Superstar" style="padding: 0.4rem 0.6rem; background: #111; color: #fff; border: 1px solid #333; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.85rem;">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+        <label style="color: #f44; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em;">Vibe</label>
+        <select id="partyVibe" style="padding: 0.4rem 0.5rem; background: #111; color: #f44; border: 1px solid #f44; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.8rem;">
+          <option value="">Keep Current</option>
+          <option value="Late Night">🌙 Late Night</option>
+          <option value="Morning">🌅 Morning</option>
+          <option value="Afternoon">☀️ Afternoon</option>
+          <option value="Evening">🌆 Evening</option>
+          <option value="Peak Hours">⚡ Peak Hours</option>
+          <option value="Antenna Club">📻 Antenna Club</option>
+        </select>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+        <label style="color: #f44; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em;">Start</label>
+        <input type="time" id="partyStartTime" style="padding: 0.4rem 0.5rem; background: #111; color: #0af; border: 1px solid #333; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.8rem; width: 80px;">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+        <label style="color: #f44; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em;">End</label>
+        <input type="time" id="partyEndTime" style="padding: 0.4rem 0.5rem; background: #111; color: #0af; border: 1px solid #333; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.8rem; width: 80px;">
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-self: flex-end;">
+        <button onclick="activateParty()" style="padding: 0.4rem 1rem; border: 1px solid #0f8; border-radius: 4px; background: #001a00; color: #0f8; font-family: 'Share Tech Mono', monospace; font-size: 0.8rem; cursor: pointer;">🎉 GO LIVE</button>
+        <button onclick="deactivateParty()" style="padding: 0.4rem 1rem; border: 1px solid #666; border-radius: 4px; background: transparent; color: #666; font-family: 'Share Tech Mono', monospace; font-size: 0.8rem; cursor: pointer;">✕ END</button>
+      </div>
+    </div>
   </div>
 
   <main class="dj-main">

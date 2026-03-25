@@ -4,6 +4,40 @@ function createAPI(autodj) {
   const app = express();
   app.use(express.json());
 
+  // --- Party Mode State ---
+  let partyMode = {
+    active: false,
+    name: '',
+    tagline: '',
+    vibe: '',
+    startTime: null,
+    endTime: null,
+  };
+
+  app.get('/party', (req, res) => {
+    res.json(partyMode);
+  });
+
+  app.post('/party', (req, res) => {
+    const { active, name, tagline, vibe, startTime, endTime } = req.body;
+    partyMode = {
+      active: active !== undefined ? active : partyMode.active,
+      name: name !== undefined ? name : partyMode.name,
+      tagline: tagline !== undefined ? tagline : partyMode.tagline,
+      vibe: vibe !== undefined ? vibe : partyMode.vibe,
+      startTime: startTime !== undefined ? startTime : partyMode.startTime,
+      endTime: endTime !== undefined ? endTime : partyMode.endTime,
+    };
+
+    // If party mode is active and has a vibe, override it
+    if (partyMode.active && partyMode.vibe) {
+      autodj.overrideVibe(partyMode.vibe);
+    }
+
+    console.log(`[Party] ${partyMode.active ? 'ACTIVE' : 'OFF'}: "${partyMode.name}" ${partyMode.startTime || ''}-${partyMode.endTime || ''}`);
+    res.json(partyMode);
+  });
+
   app.get('/status', (req, res) => {
     const ct = autodj.player.currentTrack;
     let currentTrack = null;
@@ -38,6 +72,7 @@ function createAPI(autodj) {
       currentTrack,
       queueLength: autodj.playbackQueue.length,
       vibe: autodj.currentVibe,
+      party: partyMode,
       uptime: Math.floor((Date.now() - autodj.startedAt) / 1000),
     });
   });

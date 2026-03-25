@@ -41,64 +41,80 @@
     setVibe(vibeSelect.value);
   });
 
-  // --- Party Mode (Time Blocking) ---
-  const partyModeCheck = document.getElementById('partyModeCheck');
-  const partyStartTime = document.getElementById('partyStartTime');
-  const partyEndTime = document.getElementById('partyEndTime');
-  const partyTimeSeparator = document.getElementById('partyTimeSeparator');
-  const partySetBtn = document.getElementById('partySetBtn');
+  // --- Party Mode ---
+  const partyPanel = document.getElementById('partyPanel');
+  const partyStatusBadge = document.getElementById('partyStatusBadge');
+  const partyToggleBtn = document.getElementById('partyToggleBtn');
 
-  // Load saved party mode from localStorage
-  const savedPartyMode = localStorage.getItem('dj-party-mode');
-  if (savedPartyMode) {
-    const { enabled, start, end } = JSON.parse(savedPartyMode);
-    if (enabled) {
-      partyModeCheck.checked = true;
-      partyStartTime.value = start;
-      partyEndTime.value = end;
-      togglePartyUI(true);
-    }
+  // Load current party state from server
+  async function loadPartyState() {
+    try {
+      const res = await fetch('http://' + location.hostname + ':3001/party');
+      const party = await res.json();
+      if (party.active) {
+        partyStatusBadge.textContent = '● LIVE: ' + party.name;
+        partyStatusBadge.style.color = '#0f8';
+        partyToggleBtn.style.borderColor = '#0f8';
+        partyToggleBtn.style.color = '#0f8';
+        partyToggleBtn.style.background = '#001a00';
+        // Fill form
+        document.getElementById('partyName').value = party.name || '';
+        document.getElementById('partyTagline').value = party.tagline || '';
+        document.getElementById('partyVibe').value = party.vibe || '';
+        document.getElementById('partyStartTime').value = party.startTime || '';
+        document.getElementById('partyEndTime').value = party.endTime || '';
+      } else {
+        partyStatusBadge.textContent = '';
+        partyToggleBtn.style.borderColor = '#f44';
+        partyToggleBtn.style.color = '#f44';
+        partyToggleBtn.style.background = 'transparent';
+      }
+    } catch {}
   }
+  loadPartyState();
 
-  partyModeCheck.addEventListener('change', () => {
-    togglePartyUI(partyModeCheck.checked);
-  });
-
-  function togglePartyUI(enabled) {
-    partyStartTime.style.display = enabled ? 'inline' : 'none';
-    partyEndTime.style.display = enabled ? 'inline' : 'none';
-    partyTimeSeparator.style.display = enabled ? 'inline' : 'none';
-    partySetBtn.style.display = enabled ? 'inline-block' : 'none';
-  }
-
-  window.setPartyMode = async function() {
-    if (!partyModeCheck.checked) {
-      // Clear party mode
-      localStorage.removeItem('dj-party-mode');
-      console.log('Party mode disabled');
-      return;
-    }
-
-    const start = partyStartTime.value;
-    const end = partyEndTime.value;
-
-    if (!start || !end) {
-      alert('Please set both start and end times');
-      return;
-    }
-
-    // Save to localStorage
-    localStorage.setItem('dj-party-mode', JSON.stringify({
-      enabled: true,
-      start,
-      end,
-    }));
-
-    console.log(`Party mode set: ${start} - ${end}`);
-    alert(`Party mode activated: ${start} → ${end}`);
+  window.togglePartyPanel = function() {
+    partyPanel.style.display = partyPanel.style.display === 'none' ? 'block' : 'none';
   };
 
-  partySetBtn.addEventListener('click', setPartyMode);
+  window.activateParty = async function() {
+    const name = document.getElementById('partyName').value.trim();
+    const tagline = document.getElementById('partyTagline').value.trim();
+    const vibe = document.getElementById('partyVibe').value;
+    const startTime = document.getElementById('partyStartTime').value;
+    const endTime = document.getElementById('partyEndTime').value;
+
+    if (!name) {
+      alert('Give this party a name!');
+      return;
+    }
+
+    try {
+      await fetch('http://' + location.hostname + ':3001/party', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: true, name, tagline, vibe, startTime, endTime })
+      });
+      loadPartyState();
+      console.log('Party mode activated:', name);
+    } catch (e) {
+      console.error('Party activation failed:', e);
+    }
+  };
+
+  window.deactivateParty = async function() {
+    try {
+      await fetch('http://' + location.hostname + ':3001/party', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: false, name: '', tagline: '', vibe: '', startTime: null, endTime: null })
+      });
+      loadPartyState();
+      console.log('Party mode deactivated');
+    } catch (e) {
+      console.error('Party deactivation failed:', e);
+    }
+  };
 
   // --- Theme ---
   const savedTheme = localStorage.getItem('dj-theme') || 'theme-default';

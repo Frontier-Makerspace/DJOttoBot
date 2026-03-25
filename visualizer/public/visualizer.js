@@ -11,6 +11,9 @@
   const clockEl = document.getElementById('clock');
   const topClockEl = document.getElementById('top-clock');
   const vibeBadgeTopEl = document.getElementById('vibe-badge-top');
+  const partyOverlay = document.getElementById('party-overlay');
+  const partyNameEl = document.getElementById('party-name');
+  const partyTaglineEl = document.getElementById('party-tagline');
   const toastEl = document.getElementById('request-toast');
   const venueEl = document.getElementById('venue-name');
   const bpmNumber = document.getElementById('bpm-number');
@@ -352,6 +355,18 @@
           vibeBadgeTopEl.textContent = data.vibe.name || '—';
           vibeBadge.textContent = data.vibe.name || '—';
           currentVibe = data.vibe.name || 'Afternoon';
+        }
+
+        // Party mode overlay
+        if (data.party && data.party.active && partyOverlay) {
+          partyOverlay.style.display = 'block';
+          if (partyNameEl) partyNameEl.textContent = data.party.name || '';
+          if (partyTaglineEl) partyTaglineEl.textContent = data.party.tagline || '';
+          // Override venue name with party name
+          if (venueEl) venueEl.textContent = data.party.name || 'PROTO7YPE';
+        } else if (partyOverlay) {
+          partyOverlay.style.display = 'none';
+          if (venueEl) venueEl.textContent = 'PROTO7YPE';
         }
 
         if (ytId) {
