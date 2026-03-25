@@ -324,7 +324,10 @@
         const ytId = isYouTubeId(ct.videoId) ? ct.videoId : null;
 
         // Always update track display from poll (handles page reload mid-track)
-        setTrack(ct.title || ct.name, ct.artist || ct.author, ct.album, ytId, ct.bpm, ct.albumArt || null);
+        const artist = ct.artist || ct.author || 'Unknown';
+        const title = ct.title || ct.name || 'Unknown';
+        console.log('[Poll] Track:', { title, artist, artist_raw: ct.artist, author_raw: ct.author });
+        setTrack(title, artist, ct.album, ytId, ct.bpm, ct.albumArt || null);
 
         if (ytId) {
           updateAlbumArt(ytId);
