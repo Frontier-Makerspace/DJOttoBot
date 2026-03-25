@@ -11,7 +11,23 @@ function createAPI(autodj) {
       const path = require('path');
       const basename = ct.filePath ? path.basename(ct.filePath, path.extname(ct.filePath)) : '';
       const videoId = ct.videoId || (basename ? basename.split('_')[0] : null);
-      currentTrack = Object.assign({}, ct, { videoId });
+      
+      // Parse artist from title if available (format: "Artist - Title")
+      let artist = ct.artist || 'Unknown';
+      let title = ct.title || '';
+      if (!ct.artist && title.includes(' - ')) {
+        const parts = title.split(' - ');
+        artist = parts[0].trim();
+        title = parts.slice(1).join(' - ').trim();
+      }
+      
+      currentTrack = Object.assign({}, ct, { 
+        videoId,
+        artist,
+        title,
+        name: title, // alias for compatibility
+        author: artist // alias for compatibility
+      });
     }
     res.json({
       mode: autodj.mode,

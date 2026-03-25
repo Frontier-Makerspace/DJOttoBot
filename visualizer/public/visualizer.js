@@ -337,7 +337,7 @@
     } catch(_) {}
   }
   pollAutoDJStatus();
-  setInterval(pollAutoDJStatus, 5000);
+  setInterval(pollAutoDJStatus, 2000);
 
 
   // ─── Audio ──────────────────────────────────────────────────────────────────
