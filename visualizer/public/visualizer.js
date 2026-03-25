@@ -187,11 +187,13 @@
   function setTrack(title, artist, album, videoId, bpm, albumArt) {
     if (title === currentTitle && !videoId && !albumArt) return;
     currentTitle = title;
+    console.log('[setTrack] Setting:', { title, artist, album });
     titleEl.classList.add('fade-out'); artistEl.classList.add('fade-out');
     setTimeout(() => {
       titleEl.textContent = title || '';
       artistEl.textContent = artist || '';
       if (albumEl) albumEl.textContent = album || '';
+      console.log('[setTrack] DOM updated:', { titleText: titleEl.textContent, artistText: artistEl.textContent });
       titleEl.classList.remove('fade-out'); titleEl.classList.add('fade-in');
       artistEl.classList.add('fade-in');
       void titleEl.offsetWidth;
