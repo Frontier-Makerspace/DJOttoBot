@@ -135,9 +135,10 @@ class AutoDJ {
     const fresh = results.filter(r => !this.recentlyPlayed.has(r.path));
     const candidates = fresh.length > 0 ? fresh : results; // fall back to all if everything was recently played
 
-    // Pick a random track from top results (weighted toward higher confidence)
-    const topN = Math.min(candidates.length, 10);
-    const pick = candidates[Math.floor(Math.random() * topN)];
+    // Pick a random track from a wider pool for more variety
+    // Use up to 30 candidates and pick randomly (not just top 10)
+    const poolSize = Math.min(candidates.length, 30);
+    const pick = candidates[Math.floor(Math.random() * poolSize)];
 
     if (!pick || !fs.existsSync(pick.path)) {
       log(`Picked track doesn't exist: ${pick ? pick.path : 'null'}`);
