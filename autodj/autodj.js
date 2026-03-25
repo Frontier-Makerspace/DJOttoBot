@@ -225,8 +225,9 @@ class AutoDJ {
     this.predownloading = true;
     try {
       this.currentVibe = this.effectiveVibe;
-      const queries = this.currentVibe.queries;
-      const query = queries[Math.floor(Math.random() * queries.length)] + " " + (Math.random() > 0.5 ? new Date().getFullYear() : "");
+      const queries = this.currentVibe.queries.length > 0 ? this.currentVibe.queries : this.currentVibe.tags;
+      console.log("[DEBUG] vibe.queries:", this.currentVibe.queries, "vibe.tags:", this.currentVibe.tags);
+      const query = (queries[Math.floor(Math.random() * queries.length)] || "") + (Math.random() > 0.5 ? " " + new Date().getFullYear() : "");
 
       const result = await this.downloader.searchAndDownload(query);
       this.predownloadedTrack = {

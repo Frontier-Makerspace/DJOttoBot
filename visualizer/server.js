@@ -86,7 +86,11 @@ setInterval(async () => {
       broadcast({
         type: 'nowPlaying',
         title: ct.title || ct.name,
-        author: ct.author || ct.artist,
+        author: ct.author || ct.artist || ct.author,
+        album: ct.album || null,
+        year: ct.year || null,
+        genre: ct.genre || null,
+        albumArt: ct.albumArt || null,
         vibe: status.vibe && status.vibe.name,
         mode: status.mode,
         videoId: ct.videoId,

@@ -139,6 +139,48 @@
       font-weight: bold;
     }
     .otto-input-row button:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── Vibe Schedule ── */
+    .schedule-panel {
+      margin: 1rem auto;
+      max-width: 700px;
+      background: var(--surface, #111);
+      border: 1px solid var(--border, #333);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .schedule-panel h2 {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.8rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent, #0ff);
+      margin: 0;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border, #333);
+    }
+    .schedule-grid {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 0;
+    }
+    .schedule-row {
+      display: contents;
+    }
+    .schedule-row > span {
+      padding: 0.45rem 1rem;
+      font-size: 0.78rem;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    .schedule-row.active > span {
+      background: #0a1a0a;
+      color: #0f8;
+    }
+    .schedule-row.active .s-time { color: #0f8; font-weight: bold; }
+    .s-time { color: var(--accent, #0ff); font-family: 'Share Tech Mono', monospace; white-space: nowrap; }
+    .s-vibe { color: #eee; }
+    .s-genres { color: #666; font-size: 0.72rem; }
+    .s-now { color: #0f8; font-size: 0.7rem; white-space: nowrap; }
   </style>
 </head>
 <body class="theme-prototype">
@@ -164,6 +206,39 @@
     <div class="otto-input-row">
       <input type="text" id="ottoInput" placeholder="Ask DJ Otto something..." autocomplete="off" maxlength="200">
       <button id="ottoSend">Send</button>
+    </div>
+  </div>
+
+
+  <!-- Vibe Schedule -->
+  <div class="schedule-panel">
+    <h2>🕐 Tonight's Vibe Schedule</h2>
+    <div class="schedule-grid" id="scheduleGrid">
+      <div class="schedule-row" data-start="0" data-end="7">
+        <span class="s-time">12 AM – 7 AM</span>
+        <span class="s-vibe">🌑 Late Night — Darkwave · Cold Wave · Dark Ambient</span>
+        <span class="s-now"></span>
+      </div>
+      <div class="schedule-row" data-start="7" data-end="12">
+        <span class="s-time">7 AM – 12 PM</span>
+        <span class="s-vibe">☀️ Afternoon — House · Deep House · Nu Disco</span>
+        <span class="s-now"></span>
+      </div>
+      <div class="schedule-row" data-start="12" data-end="17">
+        <span class="s-time">12 PM – 5 PM</span>
+        <span class="s-vibe">📻 Antenna Club — 80s · Antenna Music</span>
+        <span class="s-now"></span>
+      </div>
+      <div class="schedule-row" data-start="17" data-end="22">
+        <span class="s-time">5 PM – 10 PM</span>
+        <span class="s-vibe">🖤 Evening — Darkwave · EBM · Goth Industrial</span>
+        <span class="s-now"></span>
+      </div>
+      <div class="schedule-row" data-start="22" data-end="24">
+        <span class="s-time">10 PM – 12 AM</span>
+        <span class="s-vibe">💀 Peak Hours — Hard EBM · Aggrotech · Gothic Industrial</span>
+        <span class="s-now"></span>
+      </div>
     </div>
   </div>
 

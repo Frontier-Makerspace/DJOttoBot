@@ -62,6 +62,8 @@ class Player extends EventEmitter {
 
   play(filePath, title, vibeName) {
     return new Promise((resolve, reject) => {
+      // Kill any previous audio processes
+      require("child_process").execSync("killall -9 afplay 2>/dev/null || true");
       if (this._playing) {
         this.stop();
       }

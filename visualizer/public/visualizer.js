@@ -5,6 +5,7 @@
   const ctx = canvas.getContext('2d');
   const titleEl = document.getElementById('track-title');
   const artistEl = document.getElementById('track-artist');
+  const albumEl = document.getElementById('track-album');
   const vibeBadge = document.getElementById('vibe-badge');
   const modeIndicator = document.getElementById('mode-indicator');
   const clockEl = document.getElementById('clock');
@@ -14,6 +15,7 @@
   const albumArtBg = document.getElementById('album-art-bg');
   const qrContainer = document.getElementById('qr-container');
   const qrImg = document.getElementById('qr-img');
+  const ytBg = document.getElementById('yt-bg');
   const roastToastEl = document.getElementById('roast-toast');
 
   // ─── State ──────────────────────────────────────────────────────────────────
@@ -156,13 +158,40 @@
     }
   }
 
+
+  // ─── YouTube Video Background ─────────────────────────────────────────────
+  let ytVideoId = null;
+  function updateYTVideo(title, videoId) {
+    const isVideoTrack = title && /official.*(video|mv|clip)|music video/i.test(title);
+    if (isVideoTrack && videoId && videoId !== ytVideoId) {
+      ytVideoId = videoId;
+      ytBg.innerHTML = `<iframe
+        src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}&modestbranding=1&rel=0&playsinline=1"
+        allow="autoplay; encrypted-media"
+        allowfullscreen>
+      </iframe>`;
+      ytBg.classList.add('visible');
+      canvas.classList.add('video-active');
+      if (albumArtBg) albumArtBg.classList.remove('visible');
+    } else if (!isVideoTrack) {
+      if (ytVideoId) {
+        ytBg.classList.remove('visible');
+        canvas.classList.remove('video-active');
+        ytVideoId = null;
+        setTimeout(() => { ytBg.innerHTML = ''; }, 1500);
+      }
+    }
+  }
+
   // ─── Track change ───────────────────────────────────────────────────────────
-  function setTrack(title, artist, videoId, bpm) {
-    if (title === currentTitle && !videoId) return;
+  function setTrack(title, artist, album, videoId, bpm, albumArt) {
+    if (title === currentTitle && !videoId && !albumArt) return;
     currentTitle = title;
     titleEl.classList.add('fade-out'); artistEl.classList.add('fade-out');
     setTimeout(() => {
-      titleEl.textContent = title||''; artistEl.textContent = artist||'';
+      titleEl.textContent = title || '';
+      artistEl.textContent = artist || '';
+      if (albumEl) albumEl.textContent = album || '';
       titleEl.classList.remove('fade-out'); titleEl.classList.add('fade-in');
       artistEl.classList.add('fade-in');
       void titleEl.offsetWidth;
@@ -171,8 +200,22 @@
     triggerGlitch();
 
     if (videoId) {
-      updateAlbumArt(videoId);
+      updateYTVideo(title, videoId);
+      if (!ytBg.classList.contains('visible')) {
+        updateAlbumArt(videoId);
+      }
       updateQR(videoId);
+    } else if (albumArt) {
+      // Use embedded album art from ID3 tags
+      if (albumArtBg) {
+        albumArtBg.classList.remove('visible');
+        setTimeout(() => {
+          albumArtBg.style.backgroundImage = `url('${albumArt}')`;
+          albumArtBg.classList.add('visible');
+        }, 800);
+      }
+      ytBg.classList.remove('visible');
+      canvas.classList.remove('video-active');
     }
     if (bpm) updateBPM(bpm);
   }
@@ -208,12 +251,13 @@
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'nowPlaying') {
-          setTrack(msg.title, msg.author, msg.videoId, msg.bpm);
+          const ytId = isYouTubeId(msg.videoId) ? msg.videoId : null;
+          setTrack(msg.title, msg.author, msg.album, ytId, msg.bpm, msg.albumArt);
           const vibeName = (typeof msg.vibe === 'string') ? msg.vibe : (msg.vibe && msg.vibe.name);
           if (vibeName) { currentVibe = vibeName; vibeBadge.textContent = vibeName; }
           if (msg.mode) modeIndicator.textContent = msg.mode;
           if (msg.bpm) updateBPM(msg.bpm);
-          if (msg.videoId) { updateAlbumArt(msg.videoId); updateQR(msg.videoId); }
+          if (ytId) { updateAlbumArt(ytId); updateQR(ytId); }
           if (msg.startedAt) trackStartedAt = new Date(msg.startedAt).getTime();
           if (msg.duration) trackDuration = msg.duration;
         } else if (msg.type === 'request') {
@@ -261,17 +305,30 @@
   setInterval(updateProgressBar, 1000);
 
   // Poll autodj status for startedAt + duration + bpm + videoId
+  // Is this a real YouTube video ID? (exactly 11 alphanumeric/dash/underscore chars)
+  function isYouTubeId(id) {
+    return id && /^[a-zA-Z0-9_-]{11}$/.test(id);
+  }
+
   async function pollAutoDJStatus() {
     try {
       const res = await fetch('http://' + location.hostname + ':3001/status');
       const data = await res.json();
       if (data.currentTrack) {
-        trackStartedAt = data.currentTrack.startedAt ? new Date(data.currentTrack.startedAt).getTime() : null;
-        trackDuration = data.currentTrack.duration || null;
-        if (data.currentTrack.bpm) updateBPM(data.currentTrack.bpm);
-        if (data.currentTrack.videoId) {
-          updateAlbumArt(data.currentTrack.videoId);
-          updateQR(data.currentTrack.videoId);
+        const ct = data.currentTrack;
+        trackStartedAt = ct.startedAt ? new Date(ct.startedAt).getTime() : null;
+        trackDuration = ct.duration || null;
+        if (ct.bpm) updateBPM(ct.bpm);
+
+        // Only use videoId if it's a real YouTube ID
+        const ytId = isYouTubeId(ct.videoId) ? ct.videoId : null;
+
+        // Always update track display from poll (handles page reload mid-track)
+        setTrack(ct.title || ct.name, ct.artist || ct.author, ct.album, ytId, ct.bpm, ct.albumArt || null);
+
+        if (ytId) {
+          updateAlbumArt(ytId);
+          updateQR(ytId);
         }
       } else {
         trackStartedAt = null;

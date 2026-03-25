@@ -252,4 +252,21 @@
   }
 
   connectWS();
+
+  // --- Vibe Schedule Highlighter ---
+  function updateScheduleHighlight() {
+    const hour = new Date().getHours();
+    const rows = document.querySelectorAll('#scheduleGrid .schedule-row');
+    rows.forEach(row => {
+      const start = parseInt(row.dataset.start);
+      const end = parseInt(row.dataset.end);
+      const active = hour >= start && hour < end;
+      row.classList.toggle('active', active);
+      const nowEl = row.querySelector('.s-now');
+      if (nowEl) nowEl.textContent = active ? '▶ NOW' : '';
+    });
+  }
+  updateScheduleHighlight();
+  setInterval(updateScheduleHighlight, 60000);
+
 })();

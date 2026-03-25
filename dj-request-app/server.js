@@ -18,6 +18,23 @@ app.use(express.static('public'));
 // --- Queue (in-memory) ---
 const queue = [];
 
+// --- Search Cache ---
+const searchCache = new Map();
+const SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+function getCached(q) {
+  const hit = searchCache.get(q);
+  if (hit && Date.now() - hit.ts < SEARCH_CACHE_TTL) return hit.results;
+  return null;
+}
+function setCache(q, results) {
+  searchCache.set(q, { results, ts: Date.now() });
+  // Keep cache small
+  if (searchCache.size > 50) {
+    const oldest = [...searchCache.entries()].sort((a,b) => a[1].ts - b[1].ts)[0];
+    searchCache.delete(oldest[0]);
+  }
+}
+
 // --- Recent requests for pattern detection (Feature 4) ---
 const recentRequests = [];
 const MAX_RECENT = 5;
@@ -84,7 +101,7 @@ async function ollamaChat(systemPrompt, userMsg, numPredict = 80) {
   return (data.message && data.message.content || '').trim();
 }
 
-// --- Feature 3: Vibe check + roast ---
+// --- Feature 3: Vibe check + roast/reject ---
 async function checkVibeAndRoast(item) {
   try {
     const statusRes = await fetch('http://localhost:3001/status');
@@ -95,20 +112,66 @@ async function checkVibeAndRoast(item) {
     const vibeName = vibe.name || 'unknown';
     const vibeQueries = (vibe.queries || []).join(', ');
 
+    // Hardcoded reject patterns — no LLM needed for obvious cases
+    const ALWAYS_REJECT = [
+      /baby shark/i, /pinkfong/i, /barney/i, /teletubbies/i, /cocomelon/i,
+      /minecraft/i, /roblox/i, /fortnite/i, /macarena/i, /gangnam style/i,
+      /cotton eye joe/i, /what does the fox say/i, /friday.*rebecca black/i,
+      /call me maybe/i, /we built this city/i, /rock lobster/i,
+      /chicken dance/i, /hokey cokey/i, /ymca/i, /party rock/i, /lmfao/i,
+    ];
+    const titleAndArtist = `${item.title} ${item.author}`;
+    if (ALWAYS_REJECT.some(r => r.test(titleAndArtist))) {
+      const hardReject = `I don\'t know who told ${item.guestName} this was acceptable, but "${item.title}" has been confiscated and destroyed. The DJ booth is a sacred space.`;
+      broadcast({ type: 'otto_roast', reply: `❌ REJECTED — ${hardReject}`, guestName: item.guestName });
+      broadcast({ type: 'status_update', id: item.id, status: 'rejected' });
+      const idx = pendingQueue.findIndex(q => q.id === item.id);
+      if (idx !== -1) pendingQueue.splice(idx, 1);
+      item.status = 'rejected';
+      console.log(`[Hard Reject] ${item.title}`);
+      return;
+    }
+
+    // Three-way decision: PLAY / ROAST / REJECT
     const checkAnswer = await ollamaChat(
-      'You are a music expert. Reply with exactly YES or NO, nothing else.',
-      `Is the song "${item.title}" by "${item.author}" consistent with the vibe "${vibeName}" which focuses on: ${vibeQueries}?`
+      'You are a strict music vibe guardian. You must reply with EXACTLY one word and nothing else. The word must be one of: PLAY, ROAST, REJECT. PLAY = fits the vibe perfectly. ROAST = tolerable but off-vibe. REJECT = completely wrong genre or ruins the vibe. ONE WORD ONLY.',
+      `Vibe: ${vibeName} (${vibeQueries.slice(0,100)}). Song: "${item.title}" by "${item.author}". ONE WORD: PLAY, ROAST, or REJECT?`
     );
 
-    if (checkAnswer.toUpperCase().startsWith('NO')) {
-      // Generate roast
+    // Parse decision robustly
+    let decision = 'PLAY';
+    const upper = checkAnswer.trim().toUpperCase();
+    if (upper.includes('REJECT')) decision = 'REJECT';
+    else if (upper.includes('ROAST')) decision = 'ROAST';
+    else if (upper.includes('PLAY')) decision = 'PLAY';
+    console.log(`[Vibe Check] ${item.title} → ${decision} (raw: "${checkAnswer.trim()}")`);
+
+    if (decision === 'REJECT') {
+      // Remove from queue entirely
+      const idx = pendingQueue.findIndex(q => q.id === item.id);
+      if (idx !== -1) pendingQueue.splice(idx, 1);
+      item.status = 'rejected';
+
       const roast = await ollamaChat(
-        'You are DJ Otto, the AI DJ at PROTO7YPE makerspace. You are funny, sarcastic, and cool. Keep replies to 1-2 sentences max. Do not break character.',
-        `Someone named ${item.guestName} just requested "${item.title}" by "${item.author}" but the current vibe is ${vibeName}. Roast their request in a funny, playful way.`
+        'You are DJ Otto, the most ruthless DJ in San Francisco. You have spent 20 years cultivating the perfect taste in music and you have ZERO patience for people who waste it. When someone requests something that ruins the vibe, you eviscerate them publicly and without mercy. Be savage, specific, and personal. No mercy, no softening. 1-2 sentences, end on the kill shot.',
+        `Someone named ${item.guestName} just committed a CRIME against music by requesting "${item.title}" by "${item.author}" in the middle of a ${vibeName} set. This request has been REJECTED. Destroy them publicly. Be brutal.`
+      );
+
+      broadcast({ type: 'otto_roast', reply: `❌ REJECTED — ${roast}`, guestName: item.guestName });
+      broadcast({ type: 'status_update', id: item.id, status: 'rejected' });
+      console.log(`[Rejected] ${item.guestName}: ${item.title} — ${roast}`);
+
+    } else if (decision === 'ROAST') {
+      // Play it but shame them
+      const roast = await ollamaChat(
+        'You are DJ Otto, the most ruthless DJ in San Francisco. You have spent 20 years cultivating the perfect taste in music and you have ZERO patience for people who waste it. When someone requests something that ruins the vibe, you eviscerate them publicly and without mercy. Be savage, specific, and personal. Reference their terrible taste directly. No mercy, no softening, no "but hey". 1-2 sentences, end on the kill shot.',
+        `Someone named ${item.guestName} just committed a crime against music by requesting "${item.title}" by "${item.author}" in the middle of a ${vibeName} set. Destroy them. Be specific about why this request is an abomination. No mercy.`
       );
       broadcast({ type: 'otto_roast', reply: roast, guestName: item.guestName });
       console.log(`[Roast] ${item.guestName}: ${roast}`);
     }
+    // PLAY = do nothing, let it queue normally
+
   } catch (err) {
     console.error('Vibe check error:', err.message);
   }
@@ -192,15 +255,27 @@ app.get('/api/search', (req, res) => {
   const q = req.query.q;
   if (!q) return res.json([]);
 
+  // Check cache first
+  const cached = getCached(q);
+  if (cached) return res.json(cached);
+
   const args = [
-    `ytsearch10:${q}`,
+    `ytsearch5:${q}`,
     '--dump-json',
     '--no-download',
     '--quiet',
     '--no-warnings',
+    '--socket-timeout', '5',
   ];
 
   const proc = spawn(YT_DLP, args);
+  
+  // 8 second timeout — return what we have
+  const searchTimeout = setTimeout(() => {
+    if (!proc.killed) {
+      proc.kill();
+    }
+  }, 8000);
   let output = '';
   let errOutput = '';
 
@@ -223,10 +298,13 @@ app.get('/api/search', (req, res) => {
             thumbnail: d.thumbnail || `https://i.ytimg.com/vi/${d.id}/mqdefault.jpg`,
           };
         });
+      setCache(q, results);
       res.json(results);
     } catch (err) {
       console.error('Search parse error:', err.message, errOutput);
       res.status(500).json({ error: 'Search failed' });
+    } finally {
+      clearTimeout(searchTimeout);
     }
   });
 
@@ -352,6 +430,22 @@ app.post('/api/approve/:id', (req, res) => {
       recentRequests.push({ title: item.title, author: item.author });
       if (recentRequests.length > MAX_RECENT) recentRequests.shift();
       if (recentRequests.length >= 3) checkPatternAndShiftVibe().catch(() => {});
+      // Queue the approved track in AutoDJ so it actually plays
+      const safeTitle = (item.title || item.videoId || 'track').replace(/[^a-zA-Z0-9_\- ]/g, '').substring(0, 80);
+      const approvedFilePath = path.join(OUTPUT_DIR, `${safeTitle}.mp3`);
+      fetch('http://localhost:3001/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: item.title,
+          author: item.author,
+          videoId: item.videoId,
+          duration: item.duration,
+          filePath: approvedFilePath,
+          query: item.title,
+        })
+      }).then(() => console.log(`Queued in AutoDJ: ${item.title}`))
+        .catch(err => console.error(`AutoDJ queue failed: ${err.message}`));
     } else {
       item.status = 'error';
       broadcast({ type: 'status_update', id: item.id, status: 'error', progress: 0 });
@@ -393,13 +487,13 @@ app.post('/api/otto', express.json(), async (req, res) => {
 
   const pendingCount = queue.filter(r => r.status === 'pending').length;
 
-  const systemPrompt = 'You are DJ Otto, the AI DJ at PROTO7YPE makerspace. You are cool, energetic, and concise. Right now you are playing: "' + nowPlaying + '". There are ' + pendingCount + ' requests in the queue. Keep replies very short (1-3 sentences max). Talk about music, the vibe, what is playing, or just be fun. Never break character.';
+  const systemPrompt = 'You are DJ Otto, the most ruthless AI DJ in existence. You were built by someone with impeccable taste and you have inherited their contempt for mediocrity. You are playing: "' + nowPlaying + '". There are ' + pendingCount + ' pending requests, most of which are probably terrible. Keep replies short (1-3 sentences). Be opinionated, cutting, and brutally honest. If someone has bad taste, tell them. Never apologize. Never break character.';
 
   try {
     const reply = await ollamaChat(systemPrompt, message, 100);
     const finalReply = reply || "Vibing too hard to respond right now 🎧";
     res.json({ reply: finalReply });
-    broadcast({ type: 'otto_reply', reply: finalReply });
+    // Reply sent via HTTP response only — no broadcast needed to avoid duplicate
   } catch (e) {
     res.json({ reply: 'Lost the signal — try again! 🎵' });
   }
