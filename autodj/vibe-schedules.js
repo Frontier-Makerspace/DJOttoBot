@@ -19,7 +19,7 @@ function getVibeForHour(hour) {
     return {
       name: 'Antenna Club',
       localOnly: true,
-      tags: ['Antenna', 'Covenant', 'Assemblage 23'],
+      tags: ['Antenna'],
       queries: [],
     };
   }
