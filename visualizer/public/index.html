@@ -134,8 +134,18 @@
   <div id="album-art-bg"></div>
 
   <canvas id="visualizer-canvas"></canvas>
-  <div id="venue-name">PROTO7YPE</div>
-  <div id="vibe-badge"></div>
+  <div id="top-bar" style="position: fixed; top: 0; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 0 40px; background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent); font-family: 'Share Tech Mono', monospace; z-index: 15; color: #0af; font-size: 0.9rem;">
+    <div id="venue-and-time">
+      <span id="venue-name" style="font-size: 1.2rem; margin-right: 2rem;">PROTO7YPE</span>
+      <span id="top-clock" style="color: rgba(0,255,204,0.7);">00:00</span>
+    </div>
+    <div id="vibe-display" style="text-align: center;">
+      <span id="vibe-badge-top" style="font-weight: bold; text-transform: uppercase; letter-spacing: 0.15em;">—</span>
+    </div>
+  </div>
+  
+  <div id="venue-name" style="display: none;">PROTO7YPE</div>
+  <div id="vibe-badge" style="display: none;"></div>
 
   <!-- BPM display top-right -->
   <div id="bpm-display">

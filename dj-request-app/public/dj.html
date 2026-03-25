@@ -90,6 +90,17 @@
       <option value="Antenna Club">📻 Antenna Club</option>
     </select>
     
+    <span style="margin-left: 1rem; color: #666;">|</span>
+    <span class="mode-label" style="margin-left: 1rem;">PARTY MODE:</span>
+    <label style="display: flex; align-items: center; gap: 0.3rem; cursor: pointer; color: #666; font-size: 0.75rem;">
+      <input type="checkbox" id="partyModeCheck" style="cursor: pointer;">
+      <span>Block Time</span>
+    </label>
+    <input type="time" id="partyStartTime" style="padding: 0.3rem 0.5rem; background: #111; color: #0af; border: 1px solid #333; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; width: 70px; display: none;">
+    <span style="color: #666; font-size: 0.75rem; display: none;" id="partyTimeSeparator">→</span>
+    <input type="time" id="partyEndTime" style="padding: 0.3rem 0.5rem; background: #111; color: #0af; border: 1px solid #333; border-radius: 4px; font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; width: 70px; display: none;">
+    <button id="partySetBtn" style="padding: 0.3rem 0.7rem; border: 1px solid #f44; border-radius: 4px; background: transparent; color: #f44; font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; cursor: pointer; margin-left: 0.3rem; display: none;">Set</button>
+    
     <span class="now-playing" id="nowPlaying">— nothing playing —</span>
     <button class="skip-btn" onclick="skipTrack()">⏭ Skip</button>
   </div>

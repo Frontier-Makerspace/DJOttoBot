@@ -9,6 +9,8 @@
   const vibeBadge = document.getElementById('vibe-badge');
   const modeIndicator = document.getElementById('mode-indicator');
   const clockEl = document.getElementById('clock');
+  const topClockEl = document.getElementById('top-clock');
+  const vibeBadgeTopEl = document.getElementById('vibe-badge-top');
   const toastEl = document.getElementById('request-toast');
   const venueEl = document.getElementById('venue-name');
   const bpmNumber = document.getElementById('bpm-number');
@@ -78,7 +80,9 @@
   // ─── Clock ──────────────────────────────────────────────────────────────────
   function updateClock() {
     const n = new Date();
-    clockEl.textContent = String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
+    const timeStr = String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
+    clockEl.textContent = timeStr;
+    if (topClockEl) topClockEl.textContent = timeStr;
   }
   updateClock(); setInterval(updateClock, 1000);
 
@@ -342,6 +346,13 @@
         const title = ct.title || ct.name || 'Unknown';
         console.log('[Poll] Track:', { title, artist, artist_raw: ct.artist, author_raw: ct.author });
         setTrack(title, artist, ct.album, ytId, ct.bpm, ct.albumArt || null);
+
+        // Update vibe display in top bar
+        if (data.vibe && vibeBadgeTopEl) {
+          vibeBadgeTopEl.textContent = data.vibe.name || '—';
+          vibeBadge.textContent = data.vibe.name || '—';
+          currentVibe = data.vibe.name || 'Afternoon';
+        }
 
         if (ytId) {
           updateAlbumArt(ytId);

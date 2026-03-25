@@ -41,6 +41,65 @@
     setVibe(vibeSelect.value);
   });
 
+  // --- Party Mode (Time Blocking) ---
+  const partyModeCheck = document.getElementById('partyModeCheck');
+  const partyStartTime = document.getElementById('partyStartTime');
+  const partyEndTime = document.getElementById('partyEndTime');
+  const partyTimeSeparator = document.getElementById('partyTimeSeparator');
+  const partySetBtn = document.getElementById('partySetBtn');
+
+  // Load saved party mode from localStorage
+  const savedPartyMode = localStorage.getItem('dj-party-mode');
+  if (savedPartyMode) {
+    const { enabled, start, end } = JSON.parse(savedPartyMode);
+    if (enabled) {
+      partyModeCheck.checked = true;
+      partyStartTime.value = start;
+      partyEndTime.value = end;
+      togglePartyUI(true);
+    }
+  }
+
+  partyModeCheck.addEventListener('change', () => {
+    togglePartyUI(partyModeCheck.checked);
+  });
+
+  function togglePartyUI(enabled) {
+    partyStartTime.style.display = enabled ? 'inline' : 'none';
+    partyEndTime.style.display = enabled ? 'inline' : 'none';
+    partyTimeSeparator.style.display = enabled ? 'inline' : 'none';
+    partySetBtn.style.display = enabled ? 'inline-block' : 'none';
+  }
+
+  window.setPartyMode = async function() {
+    if (!partyModeCheck.checked) {
+      // Clear party mode
+      localStorage.removeItem('dj-party-mode');
+      console.log('Party mode disabled');
+      return;
+    }
+
+    const start = partyStartTime.value;
+    const end = partyEndTime.value;
+
+    if (!start || !end) {
+      alert('Please set both start and end times');
+      return;
+    }
+
+    // Save to localStorage
+    localStorage.setItem('dj-party-mode', JSON.stringify({
+      enabled: true,
+      start,
+      end,
+    }));
+
+    console.log(`Party mode set: ${start} - ${end}`);
+    alert(`Party mode activated: ${start} → ${end}`);
+  };
+
+  partySetBtn.addEventListener('click', setPartyMode);
+
   // --- Theme ---
   const savedTheme = localStorage.getItem('dj-theme') || 'theme-default';
   document.body.className = savedTheme;
