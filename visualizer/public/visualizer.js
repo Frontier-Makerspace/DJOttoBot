@@ -187,17 +187,29 @@
   function setTrack(title, artist, album, videoId, bpm, albumArt) {
     if (title === currentTitle && !videoId && !albumArt) return;
     currentTitle = title;
-    console.log('[setTrack] Setting:', { title, artist, album });
-    titleEl.classList.add('fade-out'); artistEl.classList.add('fade-out');
+    console.log('[setTrack] Setting:', { title, artist, album, artistEl_exists: !!artistEl });
+    titleEl.classList.add('fade-out'); 
+    if (artistEl) artistEl.classList.add('fade-out');
     setTimeout(() => {
       titleEl.textContent = title || '';
-      artistEl.textContent = artist || '';
+      if (artistEl) {
+        artistEl.textContent = artist || '';
+        artistEl.style.display = artist ? 'block' : 'none';
+      }
       if (albumEl) albumEl.textContent = album || '';
-      console.log('[setTrack] DOM updated:', { titleText: titleEl.textContent, artistText: artistEl.textContent });
+      console.log('[setTrack] DOM updated:', { 
+        titleText: titleEl.textContent, 
+        artistText: artistEl ? artistEl.textContent : 'NO_ELEMENT',
+        artistDisplay: artistEl ? artistEl.style.display : 'N/A'
+      });
       titleEl.classList.remove('fade-out'); titleEl.classList.add('fade-in');
-      artistEl.classList.add('fade-in');
+      if (artistEl) {
+        artistEl.classList.remove('fade-out');
+        artistEl.classList.add('fade-in');
+      }
       void titleEl.offsetWidth;
-      titleEl.classList.remove('fade-in'); artistEl.classList.remove('fade-in');
+      titleEl.classList.remove('fade-in'); 
+      if (artistEl) artistEl.classList.remove('fade-in');
     }, 400);
     triggerGlitch();
 
