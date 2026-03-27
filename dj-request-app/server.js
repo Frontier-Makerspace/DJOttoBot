@@ -15,8 +15,26 @@ const wss = new WebSocketServer({ server });
 app.use(express.json());
 app.use(express.static('public'));
 
-// --- Queue (in-memory) ---
+// --- Queue (in-memory, with pruning) ---
 const queue = [];
+const QUEUE_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+const QUEUE_PRUNE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Prune completed/rejected/error items older than QUEUE_MAX_AGE_MS
+function pruneQueue() {
+  const now = Date.now();
+  const terminalStatuses = new Set(['done', 'rejected', 'error']);
+  for (let i = queue.length - 1; i >= 0; i--) {
+    const item = queue[i];
+    if (terminalStatuses.has(item.status)) {
+      const age = now - new Date(item.requestedAt).getTime();
+      if (age > QUEUE_MAX_AGE_MS) {
+        queue.splice(i, 1);
+      }
+    }
+  }
+}
+setInterval(pruneQueue, QUEUE_PRUNE_INTERVAL_MS);
 
 // --- Search Cache ---
 const searchCache = new Map();
@@ -69,6 +87,21 @@ if (!fs.existsSync(OUTPUT_DIR)) {
 console.log(`yt-dlp: ${YT_DLP}`);
 console.log(`Output: ${OUTPUT_DIR}`);
 
+// --- Ollama availability check ---
+let ollamaAvailable = false;
+async function checkOllama() {
+  try {
+    const res = await fetch('http://localhost:11434/api/tags', { timeout: 3000 });
+    ollamaAvailable = res.ok;
+  } catch {
+    ollamaAvailable = false;
+  }
+  console.log(`[Ollama] ${ollamaAvailable ? 'Available' : 'Not available — vibe checks disabled'}`);
+}
+checkOllama();
+// Re-check every 5 minutes
+setInterval(checkOllama, 5 * 60 * 1000);
+
 // --- WebSocket ---
 function broadcast(data) {
   const msg = JSON.stringify(data);
@@ -84,6 +117,8 @@ wss.on('connection', (ws) => {
 
 // --- Ollama helper ---
 async function ollamaChat(systemPrompt, userMsg, numPredict = 80) {
+  if (!ollamaAvailable) return '';
+
   const res = await fetch('http://localhost:11434/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -101,8 +136,85 @@ async function ollamaChat(systemPrompt, userMsg, numPredict = 80) {
   return (data.message && data.message.content || '').trim();
 }
 
+// --- Shared download + queue function ---
+// Extracts the duplicated download logic into one place
+function sanitizeTitle(title, videoId) {
+  return (title || videoId || 'track').replace(/[^a-zA-Z0-9_\- ]/g, '').substring(0, 80);
+}
+
+function downloadAndQueue(item) {
+  item.status = 'downloading';
+  broadcast({ type: 'status_update', id: item.id, status: 'downloading', progress: 0 });
+
+  const outputTemplate = path.join(OUTPUT_DIR, '%(title)s.%(ext)s');
+  const videoUrl = `https://www.youtube.com/watch?v=${item.videoId}`;
+
+  const proc = spawn(YT_DLP, [
+    '-x',
+    '--audio-format', 'mp3',
+    '--audio-quality', '0',
+    '--ffmpeg-location', FFMPEG,
+    '--newline',
+    '-o', outputTemplate,
+    videoUrl,
+  ]);
+
+  proc.stdout.on('data', (data) => {
+    const match = data.toString().match(/(\d+\.?\d*)%/);
+    if (match) {
+      broadcast({ type: 'status_update', id: item.id, status: 'downloading', progress: parseFloat(match[1]) });
+    }
+  });
+
+  proc.stderr.on('data', (data) => {
+    console.error(`yt-dlp stderr: ${data}`);
+  });
+
+  proc.on('close', (code) => {
+    if (code === 0) {
+      item.status = 'done';
+      broadcast({ type: 'status_update', id: item.id, status: 'done', progress: 100 });
+      console.log(`Downloaded: ${item.title}`);
+
+      // Track for pattern detection (Feature 4)
+      recentRequests.push({ title: item.title, author: item.author });
+      if (recentRequests.length > MAX_RECENT) recentRequests.shift();
+      if (recentRequests.length >= 3) checkPatternAndShiftVibe().catch(() => {});
+
+      // Queue in AutoDJ with sanitized file path
+      const safeTitle = sanitizeTitle(item.title, item.videoId);
+      const filePath = path.join(OUTPUT_DIR, `${safeTitle}.mp3`);
+      fetch('http://localhost:3001/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: item.title,
+          author: item.author,
+          videoId: item.videoId,
+          duration: item.duration,
+          filePath,
+          query: item.title,
+        })
+      }).then(() => console.log(`Queued in AutoDJ: ${item.title}`))
+        .catch(err => console.error(`AutoDJ queue failed: ${err.message}`));
+    } else {
+      item.status = 'error';
+      broadcast({ type: 'status_update', id: item.id, status: 'error', progress: 0 });
+      console.error(`Download failed for: ${item.title} (exit code ${code})`);
+    }
+  });
+
+  proc.on('error', (err) => {
+    item.status = 'error';
+    broadcast({ type: 'status_update', id: item.id, status: 'error', progress: 0 });
+    console.error(`yt-dlp spawn error for ${item.title}: ${err.message}`);
+  });
+}
+
 // --- Feature 3: Vibe check + roast/reject ---
 async function checkVibeAndRoast(item) {
+  if (!ollamaAvailable) return;
+
   try {
     const statusRes = await fetch('http://localhost:3001/status');
     const status = await statusRes.json();
@@ -122,11 +234,12 @@ async function checkVibeAndRoast(item) {
     ];
     const titleAndArtist = `${item.title} ${item.author}`;
     if (ALWAYS_REJECT.some(r => r.test(titleAndArtist))) {
-      const hardReject = `I don\'t know who told ${item.guestName} this was acceptable, but "${item.title}" has been confiscated and destroyed. The DJ booth is a sacred space.`;
+      const hardReject = `I don't know who told ${item.guestName} this was acceptable, but "${item.title}" has been confiscated and destroyed. The DJ booth is a sacred space.`;
       broadcast({ type: 'otto_roast', reply: `❌ REJECTED — ${hardReject}`, guestName: item.guestName });
       broadcast({ type: 'status_update', id: item.id, status: 'rejected' });
-      const idx = pendingQueue.findIndex(q => q.id === item.id);
-      if (idx !== -1) pendingQueue.splice(idx, 1);
+      // FIX: use `queue` not `pendingQueue` (which didn't exist)
+      const idx = queue.findIndex(q => q.id === item.id);
+      if (idx !== -1) queue[idx].status = 'rejected';
       item.status = 'rejected';
       console.log(`[Hard Reject] ${item.title}`);
       return;
@@ -147,9 +260,9 @@ async function checkVibeAndRoast(item) {
     console.log(`[Vibe Check] ${item.title} → ${decision} (raw: "${checkAnswer.trim()}")`);
 
     if (decision === 'REJECT') {
-      // Remove from queue entirely
-      const idx = pendingQueue.findIndex(q => q.id === item.id);
-      if (idx !== -1) pendingQueue.splice(idx, 1);
+      // FIX: use `queue` not `pendingQueue`
+      const idx = queue.findIndex(q => q.id === item.id);
+      if (idx !== -1) queue[idx].status = 'rejected';
       item.status = 'rejected';
 
       const roast = await ollamaChat(
@@ -201,6 +314,8 @@ let vibeShiftInProgress = false;
 
 async function checkPatternAndShiftVibe() {
   if (recentRequests.length < 3 || vibeShiftInProgress) return;
+  if (!ollamaAvailable) return;
+
   vibeShiftInProgress = true;
   try {
     const songList = recentRequests.slice(-5).map(r => `"${r.title}" by ${r.author}`).join(', ');
@@ -345,39 +460,8 @@ app.post('/api/request', (req, res) => {
       const statusRes = await fetch('http://localhost:3001/status');
       const status = await statusRes.json();
       if (status.mode === 'BOT') {
-        // Trigger approve flow after a short delay
-        setTimeout(() => {
-          // Find and trigger the download
-          item.status = 'downloading';
-          broadcast({ type: 'status_update', id: item.id, status: 'downloading', progress: 0 });
-          const outputTemplate = path.join(OUTPUT_DIR, '%(title)s.%(ext)s');
-          const videoUrl = 'https://www.youtube.com/watch?v=' + item.videoId;
-          const proc = spawn(YT_DLP, ['-x', '--audio-format', 'mp3', '--audio-quality', '0',
-            '--ffmpeg-location', FFMPEG, '--newline', '-o', outputTemplate, videoUrl]);
-          proc.stdout.on('data', (data) => {
-            const match = data.toString().match(/(\d+\.?\d*)%/);
-            if (match) broadcast({ type: 'status_update', id: item.id, status: 'downloading', progress: parseFloat(match[1]) });
-          });
-          proc.on('close', (code) => {
-            item.status = code === 0 ? 'done' : 'error';
-            broadcast({ type: 'status_update', id: item.id, status: item.status, progress: code === 0 ? 100 : 0 });
-            if (code === 0) {
-              // Track for pattern detection (Feature 4)
-              recentRequests.push({ title: item.title, author: item.author });
-              if (recentRequests.length > MAX_RECENT) recentRequests.shift();
-              // Check if we should shift vibe (when 3+ of 5 suggest a genre)
-              if (recentRequests.length >= 3) checkPatternAndShiftVibe().catch(() => {});
-
-              // Tell AutoDJ to queue this track
-              fetch('http://localhost:3001/queue', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: item.title, videoId: item.videoId, title: item.title,
-                  author: item.author, duration: item.duration })
-              }).catch(() => {});
-            }
-          });
-        }, 500);
+        // Short delay then download using shared function
+        setTimeout(() => downloadAndQueue(item), 500);
       }
     } catch {}
   })();
@@ -385,74 +469,14 @@ app.post('/api/request', (req, res) => {
   res.json({ success: true, id: item.id });
 });
 
-// Approve request
+// Approve request (manual DJ approval)
 app.post('/api/approve/:id', (req, res) => {
   const item = queue.find((r) => r.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'Not found' });
   if (item.status !== 'pending') return res.status(400).json({ error: 'Already processed' });
 
-  item.status = 'downloading';
-  broadcast({ type: 'status_update', id: item.id, status: 'downloading', progress: 0 });
-
-  // Start download
-  const outputTemplate = path.join(OUTPUT_DIR, '%(title)s.%(ext)s');
-  const videoUrl = `https://www.youtube.com/watch?v=${item.videoId}`;
-
-  const proc = spawn(YT_DLP, [
-    '-x',
-    '--audio-format', 'mp3',
-    '--audio-quality', '0',
-    '--ffmpeg-location', FFMPEG,
-    '--newline',
-    '-o', outputTemplate,
-    videoUrl,
-  ]);
-
-  proc.stdout.on('data', (data) => {
-    const line = data.toString();
-    const match = line.match(/(\d+\.?\d*)%/);
-    if (match) {
-      const progress = parseFloat(match[1]);
-      broadcast({ type: 'status_update', id: item.id, status: 'downloading', progress });
-    }
-  });
-
-  proc.stderr.on('data', (data) => {
-    console.error(`yt-dlp stderr: ${data}`);
-  });
-
-  proc.on('close', (code) => {
-    if (code === 0) {
-      item.status = 'done';
-      broadcast({ type: 'status_update', id: item.id, status: 'done', progress: 100 });
-      console.log(`Downloaded: ${item.title}`);
-      // Track for pattern detection
-      recentRequests.push({ title: item.title, author: item.author });
-      if (recentRequests.length > MAX_RECENT) recentRequests.shift();
-      if (recentRequests.length >= 3) checkPatternAndShiftVibe().catch(() => {});
-      // Queue the approved track in AutoDJ so it actually plays
-      const safeTitle = (item.title || item.videoId || 'track').replace(/[^a-zA-Z0-9_\- ]/g, '').substring(0, 80);
-      const approvedFilePath = path.join(OUTPUT_DIR, `${safeTitle}.mp3`);
-      fetch('http://localhost:3001/queue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: item.title,
-          author: item.author,
-          videoId: item.videoId,
-          duration: item.duration,
-          filePath: approvedFilePath,
-          query: item.title,
-        })
-      }).then(() => console.log(`Queued in AutoDJ: ${item.title}`))
-        .catch(err => console.error(`AutoDJ queue failed: ${err.message}`));
-    } else {
-      item.status = 'error';
-      broadcast({ type: 'status_update', id: item.id, status: 'error', progress: 0 });
-      console.error(`Download failed for: ${item.title} (exit code ${code})`);
-    }
-  });
-
+  // Use shared download function
+  downloadAndQueue(item);
   res.json({ success: true });
 });
 
@@ -478,6 +502,10 @@ app.post('/api/otto', express.json(), async (req, res) => {
   const { message } = req.body;
   if (!message) return res.status(400).json({ error: 'No message' });
 
+  if (!ollamaAvailable) {
+    return res.json({ reply: 'Too busy spinning records to chat right now 🎧' });
+  }
+
   let nowPlaying = 'something groovy';
   try {
     const statusRes = await fetch('http://localhost:3001/status');
@@ -493,7 +521,6 @@ app.post('/api/otto', express.json(), async (req, res) => {
     const reply = await ollamaChat(systemPrompt, message, 100);
     const finalReply = reply || "Vibing too hard to respond right now 🎧";
     res.json({ reply: finalReply });
-    // Reply sent via HTTP response only — no broadcast needed to avoid duplicate
   } catch (e) {
     res.json({ reply: 'Lost the signal — try again! 🎵' });
   }

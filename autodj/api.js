@@ -102,7 +102,7 @@ function createAPI(autodj) {
 
   app.post('/vibe', (req, res) => {
     const { vibe } = req.body;
-    const validVibes = ['Morning', 'Afternoon', 'Evening', 'Peak Hours', 'Late Night'];
+    const validVibes = ['Morning', 'Afternoon', 'Antenna Club', 'Evening', 'Peak Hours', 'Late Night', 'auto', 'clear'];
     if (!validVibes.includes(vibe)) {
       return res.status(400).json({ error: `Invalid vibe. Use one of: ${validVibes.join(', ')}` });
     }

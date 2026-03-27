@@ -65,11 +65,6 @@ class Player extends EventEmitter {
       // Stop only THIS player's process (don't kill all afplay globally)
       if (this._process && this._playing) {
         this.stop();
-        // Wait briefly for it to die
-        const start = Date.now();
-        while (this._playing && Date.now() - start < 1000) {
-          require('child_process').execSync('sleep 0.1');
-        }
       }
 
       const trackTitle = title || path.basename(filePath, path.extname(filePath));
