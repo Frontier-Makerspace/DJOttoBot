@@ -7,6 +7,7 @@ const { Player } = require('./player');
 const { Downloader } = require('./downloader');
 const { getVibeForHour } = require('./vibe-schedules');
 const { createAPI } = require('./api');
+const { weightedPick, prefetchPopularity, saveCache } = require('./popularity');
 
 const MUSIC_DIR = path.join(os.homedir(), 'Music', 'AutoDJ');
 const CACHE_DIR = path.join(MUSIC_DIR, 'cache');
@@ -76,6 +77,13 @@ class AutoDJ {
   }
 
   overrideVibe(vibeName) {
+    if (vibeName === 'auto' || vibeName === 'clear' || !vibeName) {
+      this.vibeOverride = null;
+      this.vibeOverrideExpires = null;
+      this.currentVibe = getVibeForHour(new Date().getHours());
+      log(`Vibe override cleared — back to schedule: ${this.currentVibe.name}`);
+      return;
+    }
     const vibeMap = {
       'Late Night': getVibeForHour(2),
       'Afternoon': getVibeForHour(9),
@@ -85,12 +93,23 @@ class AutoDJ {
     };
     const vibe = vibeMap[vibeName] || getVibeForHour(new Date().getHours());
     this.vibeOverride = vibe;
+    // Auto-expire override after 2 hours
+    this.vibeOverrideExpires = Date.now() + 2 * 60 * 60 * 1000;
     this.currentVibe = vibe;
-    log(`Vibe override: ${vibeName} (tags: ${vibe.tags.join(', ')})`);
+    log(`Vibe override: ${vibeName} (tags: ${vibe.tags.join(', ')}) — expires in 2h`);
   }
 
   get effectiveVibe() {
-    if (this.vibeOverride) return this.vibeOverride;
+    if (this.vibeOverride) {
+      // Auto-expire vibe overrides
+      if (this.vibeOverrideExpires && Date.now() > this.vibeOverrideExpires) {
+        log(`Vibe override expired — returning to schedule`);
+        this.vibeOverride = null;
+        this.vibeOverrideExpires = null;
+      } else {
+        return this.vibeOverride;
+      }
+    }
     return getVibeForHour(new Date().getHours());
   }
 
@@ -112,47 +131,90 @@ class AutoDJ {
    * Pick a random track from the local library matching a random tag from the current vibe.
    * Avoids recently played tracks. Returns track object or null.
    */
-  pickLocalTrack() {
+  pickLocalTrack(excludePath) {
     const vibe = this.effectiveVibe;
     if (!vibe.tags || vibe.tags.length === 0) {
       log(`Vibe "${vibe.name}" has no tags configured`);
       return null;
     }
 
-    // Pick a random tag
-    const tag = vibe.tags[Math.floor(Math.random() * vibe.tags.length)];
+    // Get the last played artist to avoid back-to-back same artist
+    const lastArtist = this.lastPlayedArtist || null;
+
+    // Shuffle tags so we try different ones if the first yields no fresh results
+    const shuffledTags = [...vibe.tags].sort(() => Math.random() - 0.5);
     const searchEngine = this.downloader.searchEngine;
 
-    // Search with a low threshold to cast a wide net, then filter
-    const results = searchEngine.search(tag, 0.7);
+    for (const tag of shuffledTags) {
+      // Search with a low threshold to cast a wide net, then filter
+      const results = searchEngine.search(tag, 0.7);
 
-    if (!results || results.length === 0) {
-      log(`No results for tag "${tag}" in vibe "${vibe.name}"`);
+      if (!results || results.length === 0) continue;
+
+      // Filter out recently played, excluded track, AND same artist as last played
+      const fresh = results.filter(r =>
+        !this.recentlyPlayed.has(r.path) &&
+        (!excludePath || r.path !== excludePath) &&
+        (!lastArtist || r.artist.toLowerCase() !== lastArtist.toLowerCase())
+      );
+
+      // If filtering by artist left nothing, try without the artist filter
+      // but still exclude recently played
+      const candidates = fresh.length > 0 ? fresh : results.filter(r =>
+        !this.recentlyPlayed.has(r.path) &&
+        (!excludePath || r.path !== excludePath)
+      );
+
+      // If all results for this tag are recently played, try the next tag
+      if (candidates.length === 0) continue;
+
+      // Weighted pick by popularity (popular tracks more likely)
+      const poolSize = Math.min(candidates.length, 30);
+      const pool = candidates.slice(0, poolSize);
+      const pick = weightedPick(pool);
+
+      if (!pick || !fs.existsSync(pick.path)) continue;
+
+      const popStr = pick.popularity ? ` pop: ${pick.popularity.toLocaleString()} listeners` : '';
+      log(`🎵 Selected: "${pick.artist} - ${pick.title}" (tag: ${tag}, confidence: ${(pick.confidence * 100).toFixed(0)}%, vibe: ${vibe.name}${popStr})`);
+
+      return {
+        title: `${pick.artist} - ${pick.title}`,
+        artist: pick.artist || 'Unknown',
+        filePath: pick.path,
+        source: 'local-search',
+        tag,
+        duration: null,
+      };
+    }
+
+    // All tags exhausted with no fresh results — fall back to any random track
+    // from the full library to avoid repeats
+    log(`All tags exhausted for vibe "${vibe.name}" — picking random from full library`);
+    const allTracks = searchEngine.index.filter(t =>
+      !this.recentlyPlayed.has(t.path) &&
+      (!excludePath || t.path !== excludePath) &&
+      (!lastArtist || t.artist.toLowerCase() !== lastArtist.toLowerCase()) &&
+      fs.existsSync(t.path)
+    );
+
+    if (allTracks.length === 0) {
+      log(`No fresh tracks available at all — clearing recently played`);
+      this.recentlyPlayed.clear();
+      this.recentlyPlayedQueue = [];
       return null;
     }
 
-    // Filter out recently played
-    const fresh = results.filter(r => !this.recentlyPlayed.has(r.path));
-    const candidates = fresh.length > 0 ? fresh : results; // fall back to all if everything was recently played
-
-    // Pick a random track from a wider pool for more variety
-    // Use up to 30 candidates and pick randomly (not just top 10)
-    const poolSize = Math.min(candidates.length, 30);
-    const pick = candidates[Math.floor(Math.random() * poolSize)];
-
-    if (!pick || !fs.existsSync(pick.path)) {
-      log(`Picked track doesn't exist: ${pick ? pick.path : 'null'}`);
-      return null;
-    }
-
-    log(`🎵 Selected: "${pick.artist} - ${pick.title}" (tag: ${tag}, confidence: ${(pick.confidence * 100).toFixed(0)}%, vibe: ${vibe.name})`);
+    const pick = weightedPick(allTracks);
+    const popStr = pick.popularity ? ` pop: ${pick.popularity.toLocaleString()} listeners` : '';
+    log(`🎵 Selected (random fallback): "${pick.artist} - ${pick.title}" (vibe: ${vibe.name}${popStr})`);
 
     return {
       title: `${pick.artist} - ${pick.title}`,
       artist: pick.artist || 'Unknown',
       filePath: pick.path,
-      source: 'local-search',
-      tag,
+      source: 'local-random',
+      tag: 'random',
       duration: null,
     };
   }
@@ -166,7 +228,9 @@ class AutoDJ {
 
     this.predownloading = true;
     try {
-      const track = this.pickLocalTrack();
+      // Exclude the currently playing track so preload never picks the same song
+      const currentPath = this.player.currentTrack ? this.player.currentTrack.filePath : null;
+      const track = this.pickLocalTrack(currentPath);
       if (track) {
         this.predownloadedTrack = track;
         log(`Pre-loaded next: "${track.title}"`);
@@ -317,8 +381,9 @@ class AutoDJ {
             continue;
           }
 
-          // Mark as recently played
+          // Mark as recently played and track artist for no-repeat-artist logic
           this.markPlayed(track.filePath);
+          this.lastPlayedArtist = track.artist || null;
 
           // Start pre-loading next track in background
           this.preloadNext();
@@ -373,6 +438,12 @@ class AutoDJ {
     log(`Library: ${this.downloader.searchEngine.index.length} tracks indexed`);
     log(`Vibe: ${this.effectiveVibe.name} (tags: ${this.effectiveVibe.tags.join(', ')})`);
 
+    // Prefetch popularity data in background (doesn't block playback)
+    const searchEngine = this.downloader.searchEngine;
+    prefetchPopularity(searchEngine.index).catch(err => {
+      log(`Popularity prefetch error: ${err.message}`);
+    });
+
     // Connect to request app
     this.connectWS();
 
@@ -403,6 +474,7 @@ process.on('SIGINT', () => {
   log('Shutting down...');
   dj.running = false;
   dj.player.stop();
+  saveCache();
   process.exit(0);
 });
 
@@ -410,5 +482,6 @@ process.on('SIGTERM', () => {
   log('Shutting down...');
   dj.running = false;
   dj.player.stop();
+  saveCache();
   process.exit(0);
 });

@@ -5,3 +5,4 @@ cache/
 *.webm
 .env
 .DS_Store
+popularity-cache.json

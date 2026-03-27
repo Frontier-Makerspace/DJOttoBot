@@ -27,7 +27,7 @@ function getVibeForHour(hour) {
     return {
       name: 'Evening',
       localOnly: true,
-      tags: ['Antenna', 'Front 242', 'Combichrist'],
+      tags: ['Front 242', 'Combichrist', 'KMFDM', 'Nine Inch Nails', 'Covenant', 'Assemblage 23', 'And One'],
       queries: [],
     };
   }
@@ -35,7 +35,7 @@ function getVibeForHour(hour) {
   return {
     name: 'Peak Hours',
     localOnly: true,
-    tags: ['KMFDM', 'Front 242', 'Covenant'],
+    tags: ['KMFDM', 'Front 242', 'Covenant', 'Combichrist', 'Nine Inch Nails'],
     queries: [],
   };
 }
