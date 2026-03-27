@@ -76,7 +76,7 @@ class SearchEngine {
     this.libraryPaths = libraryPaths.filter(p => fs.existsSync(p));
     this.index = [];
     this.lastRebuild = 0;
-    this.rebuildInterval = 5 * 60 * 1000; // 5 minutes
+    this.rebuildInterval = 30 * 60 * 1000; // 30 minutes
 
     console.log(`[SearchEngine] Initialized with ${this.libraryPaths.length} library paths`);
     this.rebuildIndex();
@@ -140,6 +140,26 @@ class SearchEngine {
           // Skip indexing errors
         }
       }
+    }
+
+    // Deduplicate by artist+title (lowercase), keeping shorter path (canonical copy)
+    const seen = new Map();
+    for (const track of this.index) {
+      const key = `${track.artist.toLowerCase()}::${track.title.toLowerCase()}`;
+      if (seen.has(key)) {
+        const existing = seen.get(key);
+        if (track.path.length < existing.path.length) {
+          seen.set(key, track);
+        }
+      } else {
+        seen.set(key, track);
+      }
+    }
+    const beforeDedup = this.index.length;
+    this.index = Array.from(seen.values());
+    const dupsRemoved = beforeDedup - this.index.length;
+    if (dupsRemoved > 0) {
+      console.log(`[SearchEngine] Removed ${dupsRemoved} duplicate tracks`);
     }
 
     this.lastRebuild = Date.now();

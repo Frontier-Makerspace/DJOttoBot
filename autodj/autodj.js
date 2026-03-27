@@ -59,8 +59,12 @@ class AutoDJ {
     this.artistPlayLog = []; // { artist, timestamp }
     this.ARTIST_HOURLY_LIMIT = 3;
 
+    // WebSocket server clients for broadcasting nowPlaying
+    this.wsClients = new Set();
+
     this.player.on('started', (track) => {
       log(`▶ Playing: ${track.title}`);
+      this._broadcastNowPlaying(track);
     });
     this.player.on('finished', (track) => {
       log(`✓ Finished: ${track ? track.title : 'unknown'}`);
@@ -264,6 +268,42 @@ class AutoDJ {
     } finally {
       this.predownloading = false;
     }
+  }
+
+  // --- Broadcast nowPlaying to connected WS clients on port 3001 ---
+
+  _broadcastNowPlaying(track) {
+    if (!track || this.wsClients.size === 0) return;
+
+    // Parse artist/title from track.title (format: "Artist - Title")
+    let artist = track.artist || 'Unknown';
+    let title = track.title || '';
+    if (title.includes(' - ')) {
+      const parts = title.split(' - ');
+      artist = parts[0].trim();
+      title = parts.slice(1).join(' - ').trim();
+    }
+
+    const msg = JSON.stringify({
+      type: 'nowPlaying',
+      title,
+      artist,
+      vibe: this.currentVibe ? this.currentVibe.name : null,
+      mode: this.mode,
+      bpm: track.bpm || null,
+      duration: track.duration || null,
+      startedAt: track.startedAt || new Date().toISOString(),
+      videoId: track.videoId || null,
+    });
+
+    for (const client of this.wsClients) {
+      try {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(msg);
+        }
+      } catch {}
+    }
+    log(`Broadcast nowPlaying to ${this.wsClients.size} client(s)`);
   }
 
   // --- WebSocket connection to dj-request-app ---
@@ -472,10 +512,21 @@ class AutoDJ {
     // Connect to request app
     this.connectWS();
 
-    // Start API
+    // Start API with WebSocket server for nowPlaying broadcasts
     const app = createAPI(this);
-    app.listen(API_PORT, () => {
-      log(`API listening on port ${API_PORT}`);
+    const http = require('http');
+    const server = http.createServer(app);
+    const wss = new WebSocket.Server({ server });
+    wss.on('connection', (ws) => {
+      this.wsClients.add(ws);
+      log(`WS client connected (${this.wsClients.size} total)`);
+      ws.on('close', () => {
+        this.wsClients.delete(ws);
+        log(`WS client disconnected (${this.wsClients.size} total)`);
+      });
+    });
+    server.listen(API_PORT, () => {
+      log(`API + WS listening on port ${API_PORT}`);
     });
 
     // Start state writer

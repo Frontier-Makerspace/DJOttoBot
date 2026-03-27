@@ -67,12 +67,14 @@ async function getTrackPopularity(artist, title) {
     if (data.track) {
       const listeners = parseInt(data.track.listeners) || 0;
       const playcount = parseInt(data.track.playcount) || 0;
+      const genre = (data.track.toptags && data.track.toptags.tag && data.track.toptags.tag[0] && data.track.toptags.tag[0].name) || null;
 
       const entry = {
         artist,
         title,
         listeners,
         playcount,
+        genre,
         fetchedAt: Date.now(),
       };
 
@@ -167,7 +169,37 @@ function weightedPick(candidates) {
   return withWeights[withWeights.length - 1];
 }
 
+/**
+ * Get cached genre for a track, or null if not available.
+ */
+function getGenre(artist, title) {
+  const key = cacheKey(artist, title);
+  const cached = cache[key];
+  return (cached && cached.genre) || null;
+}
+
+/**
+ * Get how many times a track has been skipped (from skip-log.json).
+ */
+const SKIP_LOG_FILE = path.join(__dirname, 'skip-log.json');
+
+function getSkipCount(artist, title) {
+  try {
+    if (!fs.existsSync(SKIP_LOG_FILE)) return 0;
+    const skips = JSON.parse(fs.readFileSync(SKIP_LOG_FILE, 'utf8'));
+    const a = artist.toLowerCase().trim();
+    const t = title.toLowerCase().trim();
+    return skips.filter(s =>
+      s.artist && s.title &&
+      s.artist.toLowerCase().trim() === a &&
+      s.title.toLowerCase().trim() === t
+    ).length;
+  } catch {
+    return 0;
+  }
+}
+
 // Initialize cache on load
 loadCache();
 
-module.exports = { getTrackPopularity, prefetchPopularity, weightedPick, saveCache, loadCache };
+module.exports = { getTrackPopularity, prefetchPopularity, weightedPick, saveCache, loadCache, getGenre, getSkipCount };
