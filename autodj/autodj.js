@@ -288,6 +288,7 @@ class AutoDJ {
       type: 'nowPlaying',
       title,
       artist,
+      author: artist,
       vibe: this.currentVibe ? this.currentVibe.name : null,
       mode: this.mode,
       bpm: track.bpm || null,
