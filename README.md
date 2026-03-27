@@ -79,8 +79,25 @@ cd visualizer && npm install && npm start
 
 Falls back to polling `http://localhost:3001/status` every 5s.
 
-## Setup (Mac Mini)
+---
 
+## Quick Setup (Mac Mini)
+
+A setup script is included for fresh installs:
+
+```bash
+bash setup.sh
+```
+
+This will:
+1. Install Xcode CLI tools, Homebrew, Node.js, yt-dlp, ffmpeg, Google Chrome
+2. Clone the repo to `~/DJOttoBot/`
+3. Install Node dependencies for all three packages
+4. Create music directories (`~/Music/MP3/`, `~/Music/AutoDJ/`)
+5. Install and load all four launchd services (auto-start on login)
+6. Enable SSH (Remote Login)
+
+Or manually:
 1. Install dependencies: `brew install yt-dlp ffmpeg`
 2. Start request app: `cd dj-request-app && npm start`
 3. Start AutoDJ bot: `cd autodj && npm start`
@@ -93,3 +110,83 @@ Falls back to polling `http://localhost:3001/status` every 5s.
 - macOS (uses `afplay` for audio)
 - Node.js 18+
 - yt-dlp + ffmpeg (`brew install yt-dlp ffmpeg`)
+
+---
+
+## launchd Services
+
+Four services are installed to `~/Library/LaunchAgents/` by `setup.sh`:
+
+| Label | Description | Port |
+|---|---|---|
+| `com.djottobot.requests` | Guest kiosk + DJ panel | 3000 |
+| `com.djottobot.autodj` | Autonomous DJ bot | 3001 |
+| `com.djottobot.visualizer` | TV visualizer | 3002 |
+| `com.djottobot.kiosk` | Chrome kiosk launcher | — |
+
+**Manage services:**
+```bash
+# Restart autodj
+launchctl kickstart -k gui/$(id -u)/com.djottobot.autodj
+
+# Stop a service
+launchctl unload ~/Library/LaunchAgents/com.djottobot.autodj.plist
+
+# Start a service
+launchctl load ~/Library/LaunchAgents/com.djottobot.autodj.plist
+
+# View logs
+tail -f ~/Music/AutoDJ/autodj.log
+tail -f ~/Music/AutoDJ/autodj-error.log
+```
+
+---
+
+## Troubleshooting
+
+### AutoDJ gets stuck repeating the same song
+This is a known issue — the bot can get into a loop every 5–10 minutes. Restart the service to fix it:
+```bash
+launchctl kickstart -k gui/$(id -u)/com.djottobot.autodj
+```
+Root cause is under investigation (likely in `player.js` or `search-engine.js`).
+
+### No audio
+- Check that `afplay` is working: `afplay /System/Library/Sounds/Ping.aiff`
+- Check autodj logs: `tail -f ~/Music/AutoDJ/autodj.log`
+- Make sure the Mac Mini's audio output is set to the correct device in System Settings → Sound
+
+### yt-dlp errors / no search results
+- Update yt-dlp: `brew upgrade yt-dlp`
+- Test manually: `yt-dlp --get-title "ytsearch1:Aphex Twin"`
+
+### Visualizer blank / not updating
+- Check that autodj is running: `curl http://localhost:3001/status`
+- Hard-refresh Chrome: Cmd+Shift+R
+- Check visualizer logs: `tail -f ~/Music/AutoDJ/visualizer.log`
+
+### Guest kiosk not reachable from tablet
+- Find the Mac Mini's IP: `ipconfig getifaddr en0`
+- Make sure firewall allows port 3000: System Settings → Network → Firewall
+
+---
+
+## Music Directories
+
+| Path | Purpose |
+|---|---|
+| `~/Music/AutoDJ/` | Local fallback tracks (MP3s) |
+| `~/Music/MP3/` | Downloaded approved requests |
+| `~/Music/AutoDJ/cache/` | yt-dlp download cache |
+
+Drop local MP3s in `~/Music/AutoDJ/` for fallback playback when YouTube is unavailable.
+
+---
+
+## SSH Access
+
+```bash
+ssh otto@[mac-mini-ip]
+```
+
+Enable via: System Settings → General → Sharing → Remote Login
