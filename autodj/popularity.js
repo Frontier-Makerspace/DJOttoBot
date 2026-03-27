@@ -236,7 +236,16 @@ function getSkipCount(artist, title) {
   }
 }
 
+// Clear and re-fetch all cache entries
+function clearCache() {
+  cache = {};
+  try {
+    if (fs.existsSync(CACHE_FILE)) fs.unlinkSync(CACHE_FILE);
+  } catch {}
+  console.log('[Popularity] Cache cleared');
+}
+
 // Initialize cache on load
 loadCache();
 
-module.exports = { getTrackPopularity, prefetchPopularity, weightedPick, saveCache, loadCache, getGenre, getAlbumArt, getSkipCount };
+module.exports = { getTrackPopularity, prefetchPopularity, weightedPick, saveCache, loadCache, clearCache, getGenre, getAlbumArt, getSkipCount };
