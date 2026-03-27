@@ -55,6 +55,10 @@ class AutoDJ {
     this.recentlyPlayed = new Set();
     this.recentlyPlayedQueue = [];
 
+    // Track artist play counts per hour (max 3 per artist per hour)
+    this.artistPlayLog = []; // { artist, timestamp }
+    this.ARTIST_HOURLY_LIMIT = 3;
+
     this.player.on('started', (track) => {
       log(`▶ Playing: ${track.title}`);
     });
@@ -113,6 +117,22 @@ class AutoDJ {
     return getVibeForHour(new Date().getHours());
   }
 
+  // --- Artist hourly limit ---
+
+  isArtistOverLimit(artist) {
+    if (!artist || artist === 'Unknown') return false;
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    // Prune old entries
+    this.artistPlayLog = this.artistPlayLog.filter(e => e.timestamp > oneHourAgo);
+    const count = this.artistPlayLog.filter(e => e.artist.toLowerCase() === artist.toLowerCase()).length;
+    return count >= this.ARTIST_HOURLY_LIMIT;
+  }
+
+  logArtistPlay(artist) {
+    if (!artist || artist === 'Unknown') return;
+    this.artistPlayLog.push({ artist, timestamp: Date.now() });
+  }
+
   // --- Recently played tracking ---
 
   markPlayed(filePath) {
@@ -151,18 +171,21 @@ class AutoDJ {
 
       if (!results || results.length === 0) continue;
 
-      // Filter out recently played, excluded track, AND same artist as last played
+      // Filter out recently played, excluded track, same artist as last played,
+      // AND artists that have hit their hourly limit (3 per hour)
       const fresh = results.filter(r =>
         !this.recentlyPlayed.has(r.path) &&
         (!excludePath || r.path !== excludePath) &&
-        (!lastArtist || r.artist.toLowerCase() !== lastArtist.toLowerCase())
+        (!lastArtist || r.artist.toLowerCase() !== lastArtist.toLowerCase()) &&
+        !this.isArtistOverLimit(r.artist)
       );
 
-      // If filtering by artist left nothing, try without the artist filter
-      // but still exclude recently played
+      // If filtering by artist left nothing, try without the back-to-back filter
+      // but still respect the hourly limit
       const candidates = fresh.length > 0 ? fresh : results.filter(r =>
         !this.recentlyPlayed.has(r.path) &&
-        (!excludePath || r.path !== excludePath)
+        (!excludePath || r.path !== excludePath) &&
+        !this.isArtistOverLimit(r.artist)
       );
 
       // If all results for this tag are recently played, try the next tag
@@ -195,6 +218,7 @@ class AutoDJ {
       !this.recentlyPlayed.has(t.path) &&
       (!excludePath || t.path !== excludePath) &&
       (!lastArtist || t.artist.toLowerCase() !== lastArtist.toLowerCase()) &&
+      !this.isArtistOverLimit(t.artist) &&
       fs.existsSync(t.path)
     );
 
@@ -381,9 +405,10 @@ class AutoDJ {
             continue;
           }
 
-          // Mark as recently played and track artist for no-repeat-artist logic
+          // Mark as recently played, track artist for no-repeat logic, and log hourly count
           this.markPlayed(track.filePath);
           this.lastPlayedArtist = track.artist || null;
+          this.logArtistPlay(track.artist);
 
           // Start pre-loading next track in background
           this.preloadNext();
