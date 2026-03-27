@@ -196,9 +196,11 @@ class AutoDJ {
       if (candidates.length === 0) continue;
 
       // Weighted pick by popularity (popular tracks more likely)
+      // Pass current BPM for BPM-aware selection
+      const currentBpm = (this.player.currentTrack && this.player.currentTrack.bpm) || null;
       const poolSize = Math.min(candidates.length, 30);
       const pool = candidates.slice(0, poolSize);
-      const pick = weightedPick(pool);
+      const pick = weightedPick(pool, currentBpm);
 
       if (!pick || !fs.existsSync(pick.path)) continue;
 
@@ -233,7 +235,8 @@ class AutoDJ {
       return null;
     }
 
-    const pick = weightedPick(allTracks);
+    const currentBpm = (this.player.currentTrack && this.player.currentTrack.bpm) || null;
+    const pick = weightedPick(allTracks, currentBpm);
     const popStr = pick.popularity ? ` pop: ${pick.popularity.toLocaleString()} listeners` : '';
     log(`🎵 Selected (random fallback): "${pick.artist} - ${pick.title}" (vibe: ${vibe.name}${popStr})`);
 
@@ -268,6 +271,23 @@ class AutoDJ {
     } finally {
       this.predownloading = false;
     }
+  }
+
+  // --- Get next track for crossfade ---
+
+  _getNextTrack(excludePath) {
+    if (this.playbackQueue.length > 0) {
+      return this.playbackQueue.shift();
+    }
+    if (this.predownloadedTrack) {
+      const t = this.predownloadedTrack;
+      this.predownloadedTrack = null;
+      return t;
+    }
+    if (this.mode === 'BOT') {
+      return this.pickLocalTrack(excludePath);
+    }
+    return null;
   }
 
   // --- Broadcast nowPlaying to connected WS clients on port 3001 ---
@@ -454,17 +474,55 @@ class AutoDJ {
           // Start pre-loading next track in background
           this.preloadNext();
 
-          // Play and wait for completion
+          // Play and wait for completion, with crossfade if possible
           try {
-            await this.player.play(track.filePath, track.title, this.currentVibe.name);
+            const playPromise = this.player.play(track.filePath, track.title, this.currentVibe.name);
+
+            // Check if we can schedule a crossfade
+            const trackDuration = this.player.currentTrack && this.player.currentTrack.duration;
+            let didCrossfade = false;
+
+            if (trackDuration && trackDuration > 10 && this.player.crossfadeMs > 0) {
+              // Wait until ~5 seconds before end to attempt crossfade
+              const crossfadeWaitMs = Math.max(0, (trackDuration - 5) * 1000);
+
+              const result = await Promise.race([
+                playPromise.then(() => 'finished'),
+                sleep(crossfadeWaitMs).then(() => 'crossfade'),
+              ]);
+
+              if (result === 'crossfade' && this.player.isPlaying()) {
+                const nextTrack = this._getNextTrack(track.filePath);
+
+                if (nextTrack && nextTrack.filePath && fs.existsSync(nextTrack.filePath)) {
+                  this.markPlayed(nextTrack.filePath);
+                  this.lastPlayedArtist = nextTrack.artist || null;
+                  this.logArtistPlay(nextTrack.artist);
+
+                  log(`🔀 Crossfading to: "${nextTrack.title}"`);
+                  await this.player.crossfadeTo(nextTrack.filePath, nextTrack.title, this.currentVibe.name);
+                  didCrossfade = true;
+                  this.preloadNext();
+                  continue; // skip gap, new track already playing
+                }
+
+                // No next track available — wait for current to finish normally
+                await playPromise;
+              }
+              // result === 'finished' means track ended before crossfade point
+            } else {
+              // No duration or too short — wait for normal completion
+              await playPromise;
+            }
+
+            if (!didCrossfade) {
+              await sleep(TRACK_GAP_MS);
+            }
           } catch (err) {
             log(`Playback error: ${err.message}`);
             await sleep(2000);
             continue;
           }
-
-          // Gap between tracks
-          await sleep(TRACK_GAP_MS);
         }
 
       } catch (err) {

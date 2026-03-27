@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
+const { detectBPM } = require('./player');
 
 const LASTFM_API_KEY = '66750419e224e3ee4433e46456e0e5b4';
 const LASTFM_BASE = 'http://ws.audioscrobbler.com/2.0/';
@@ -117,6 +118,15 @@ async function prefetchPopularity(tracks) {
     await getTrackPopularity(track.artist, track.title);
     fetched++;
 
+    // Detect BPM if not cached and file path is available
+    const key2 = cacheKey(track.artist, track.title);
+    if (cache[key2] && !cache[key2].bpm && track.path) {
+      try {
+        const bpm = await detectBPM(track.path, 'Afternoon');
+        cache[key2].bpm = bpm;
+      } catch(_) {}
+    }
+
     if (fetched % 50 === 0) {
       console.log(`[Popularity] Prefetch progress: ${fetched} fetched, ${skipped} cached`);
       saveCache();
@@ -133,26 +143,34 @@ async function prefetchPopularity(tracks) {
  * less popular ones still have a chance.
  *
  * @param {Array} candidates - tracks with { artist, title, path, ... }
+ * @param {number|null} targetBpm - if provided, boost tracks with similar BPM
  * @returns {Object|null} selected track (with .popularity added)
  */
-function weightedPick(candidates) {
+function weightedPick(candidates, targetBpm) {
   if (!candidates || candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0];
 
-  // Get listener counts from cache
+  // Get listener counts and BPM from cache
   const withPop = candidates.map(t => {
     const key = cacheKey(t.artist, t.title);
     const cached = cache[key];
     const listeners = (cached && cached.listeners) || 0;
-    return { ...t, listeners };
+    const bpm = (cached && cached.bpm) || null;
+    return { ...t, listeners, bpm };
   });
 
   // Use log scale so mega-hits don't completely dominate
   // Add a floor of 100 so uncached tracks still have a chance
-  const withWeights = withPop.map(t => ({
-    ...t,
-    weight: Math.log10(Math.max(t.listeners, 100)),
-  }));
+  // Apply BPM boost: ±10 BPM → 2x, ±20 BPM → 1.5x, others → 1x
+  const withWeights = withPop.map(t => {
+    let weight = Math.log10(Math.max(t.listeners, 100));
+    if (targetBpm && t.bpm) {
+      const bpmDiff = Math.abs(t.bpm - targetBpm);
+      if (bpmDiff <= 10) weight *= 2;
+      else if (bpmDiff <= 20) weight *= 1.5;
+    }
+    return { ...t, weight };
+  });
 
   const totalWeight = withWeights.reduce((sum, t) => sum + t.weight, 0);
 

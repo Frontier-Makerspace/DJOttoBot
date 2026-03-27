@@ -47,6 +47,7 @@ class Player extends EventEmitter {
     this._process = null;
     this._playing = false;
     this.currentTrack = null;
+    this.crossfadeMs = 3000;
     this._afplayAvailable = this._checkCommand('afplay');
     this._ffplayAvailable = this._checkCommand('ffplay');
   }
@@ -117,30 +118,150 @@ class Player extends EventEmitter {
 
       this._process = proc;
       this._playing = true;
-      this.emit('started', this.currentTrack);
+      const trackInfo = this.currentTrack;
+      this.emit('started', trackInfo);
 
       proc.on('close', (code) => {
-        this._playing = false;
-        this._process = null;
-        const track = this.currentTrack;
-        this.currentTrack = null;
-        if (code === 0 || code === null) {
-          this.emit('finished', track);
-          resolve(track);
-        } else {
-          const err = new Error(`Playback exited with code ${code}`);
-          this.emit('error', err);
-          resolve(track); // still resolve so main loop continues
+        // Only update state if this is still the active process
+        // (crossfadeTo may have already replaced it)
+        const wasActive = this._process === proc;
+        if (wasActive) {
+          this._playing = false;
+          this._process = null;
+          this.currentTrack = null;
         }
+        if (wasActive) {
+          if (code === 0 || code === null) {
+            this.emit('finished', trackInfo);
+          } else {
+            this.emit('error', new Error(`Playback exited with code ${code}`));
+          }
+        }
+        resolve(trackInfo);
       });
 
       proc.on('error', (err) => {
-        this._playing = false;
-        this._process = null;
-        this.currentTrack = null;
+        if (this._process === proc) {
+          this._playing = false;
+          this._process = null;
+          this.currentTrack = null;
+        }
         this.emit('error', err);
         reject(err);
       });
+    });
+  }
+
+  /**
+   * Crossfade from the currently playing track to a new track.
+   * Starts the next track at low volume overlapping the current one,
+   * then kills the old track after crossfadeMs and continues at full volume.
+   * Emits 'finished' for the old track and 'started' for the new track.
+   * Returns a promise that resolves when the new track finishes playing.
+   */
+  crossfadeTo(nextFilePath, nextTitle, vibeName) {
+    return new Promise((resolve, reject) => {
+      const oldProcess = this._process;
+      const oldTrack = this.currentTrack;
+
+      // Nothing playing — fall back to normal play
+      if (!oldProcess || !this._playing) {
+        return this.play(nextFilePath, nextTitle, vibeName).then(resolve, reject);
+      }
+
+      const trackTitle = nextTitle || path.basename(nextFilePath, path.extname(nextFilePath));
+
+      // Get duration via ffprobe
+      let trackDuration = null;
+      try {
+        const probe = execSync(
+          `${FFPROBE} -v quiet -print_format json -show_format "${nextFilePath}"`,
+          { timeout: 5000, encoding: 'utf8' }
+        );
+        const info = JSON.parse(probe);
+        trackDuration = parseFloat(info.format && info.format.duration) || null;
+      } catch(_) {}
+
+      const basename = path.basename(nextFilePath, path.extname(nextFilePath));
+      const videoId = basename.split('_')[0] || null;
+
+      const newTrack = {
+        title: trackTitle,
+        filePath: nextFilePath,
+        startedAt: new Date(),
+        duration: trackDuration,
+        videoId,
+        bpm: null,
+      };
+
+      // Detect BPM asynchronously
+      detectBPM(nextFilePath, vibeName || 'Afternoon').then(bpm => {
+        if (this.currentTrack && this.currentTrack.filePath === nextFilePath) {
+          this.currentTrack.bpm = bpm;
+        }
+      }).catch(() => {});
+
+      // Deactivate old process so its close handler won't emit events
+      this._process = null;
+
+      // Start preview of next track at low volume (overlap with current)
+      let previewProc;
+      if (this._afplayAvailable) {
+        previewProc = spawn('afplay', ['-q', '1', '-v', '0.2', nextFilePath], { stdio: 'ignore' });
+      } else if (this._ffplayAvailable) {
+        previewProc = spawn('ffplay', ['-nodisp', '-autoexit', '-loglevel', 'quiet', '-volume', '20', nextFilePath], { stdio: 'ignore' });
+      } else {
+        return reject(new Error('No audio player available (need afplay or ffplay)'));
+      }
+
+      // After crossfade period: kill old, upgrade to full volume
+      setTimeout(() => {
+        // Kill old track
+        oldProcess.kill('SIGTERM');
+        this.emit('finished', oldTrack);
+
+        // Kill low-volume preview, start full-volume playback
+        previewProc.kill('SIGTERM');
+
+        let fullProc;
+        if (this._afplayAvailable) {
+          fullProc = spawn('afplay', ['-q', '1', nextFilePath], { stdio: 'ignore' });
+        } else {
+          fullProc = spawn('ffplay', ['-nodisp', '-autoexit', '-loglevel', 'quiet', nextFilePath], { stdio: 'ignore' });
+        }
+
+        this._process = fullProc;
+        this._playing = true;
+        this.currentTrack = newTrack;
+        this.emit('started', newTrack);
+
+        fullProc.on('close', (code) => {
+          const wasActive = this._process === fullProc;
+          if (wasActive) {
+            this._playing = false;
+            this._process = null;
+            this.currentTrack = null;
+          }
+          if (wasActive) {
+            if (code === 0 || code === null) {
+              this.emit('finished', newTrack);
+            } else {
+              this.emit('error', new Error(`Playback exited with code ${code}`));
+            }
+          }
+          resolve(newTrack);
+        });
+
+        fullProc.on('error', (err) => {
+          if (this._process === fullProc) {
+            this._playing = false;
+            this._process = null;
+            this.currentTrack = null;
+          }
+          this.emit('error', err);
+          reject(err);
+        });
+      }, this.crossfadeMs);
     });
   }
 
@@ -158,4 +279,4 @@ class Player extends EventEmitter {
   }
 }
 
-module.exports = { Player };
+module.exports = { Player, detectBPM, estimateBPM };
