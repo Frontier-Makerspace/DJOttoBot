@@ -113,10 +113,14 @@ function findYtDlp() {
 const YT_DLP = findYtDlp();
 const FFMPEG = '/opt/homebrew/bin/ffmpeg';
 const OUTPUT_DIR = path.join(os.homedir(), 'Music', 'MP3');
+const LIBRARY_DIR = path.join(os.homedir(), 'Music', 'Library', 'Darren');
 
-// Ensure output directory exists
+// Ensure output directories exist
 if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+}
+if (!fs.existsSync(LIBRARY_DIR)) {
+  fs.mkdirSync(LIBRARY_DIR, { recursive: true });
 }
 
 console.log(`yt-dlp: ${YT_DLP}`);
@@ -244,7 +248,19 @@ function downloadAndQueue(item) {
       // Find the actual downloaded file (yt-dlp may use a different filename than we'd guess)
       const actualPath = findLatestMp3(OUTPUT_DIR, 30000);
       const safeTitle = sanitizeTitle(item.title, item.videoId);
-      const filePath = actualPath || path.join(OUTPUT_DIR, `${safeTitle}.mp3`);
+      let filePath = actualPath || path.join(OUTPUT_DIR, `${safeTitle}.mp3`);
+
+      // Move downloaded file to library folder
+      try {
+        const destPath = path.join(LIBRARY_DIR, path.basename(filePath));
+        fs.renameSync(filePath, destPath);
+        filePath = destPath;
+        console.log(`Moved to library: ${destPath}`);
+      } catch (moveErr) {
+        console.warn(`Could not move to library (queuing from original location): ${moveErr.message}`);
+      }
+
+      item.filePath = filePath;
       fetch('http://localhost:3001/queue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -285,7 +301,23 @@ async function checkVibeAndRoast(item) {
     if (!vibe) return;
 
     const vibeName = vibe.name || 'unknown';
-    const vibeQueries = (vibe.queries || []).join(', ');
+
+    // Fetch actual vibe schedule to get definitive tag list
+    let vibeTags = [];
+    try {
+      const vibesRes = await fetch('http://localhost:3001/vibes');
+      const vibesConfig = await vibesRes.json();
+      if (vibesConfig && Array.isArray(vibesConfig.schedules)) {
+        const currentSchedule = vibesConfig.schedules.find(s => s.name === vibeName);
+        if (currentSchedule && Array.isArray(currentSchedule.tags)) {
+          vibeTags = currentSchedule.tags;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch vibe tags:', err.message);
+    }
+
+    const vibeTagList = vibeTags.length > 0 ? vibeTags.join(', ') : 'unknown';
 
     // Hardcoded reject patterns — no LLM needed for obvious cases
     const ALWAYS_REJECT = [
@@ -311,8 +343,8 @@ async function checkVibeAndRoast(item) {
 
     // Three-way decision: PLAY / ROAST / REJECT
     const checkAnswer = await ollamaChat(
-      'You are a strict music vibe guardian. You must reply with EXACTLY one word and nothing else. The word must be one of: PLAY, ROAST, REJECT. PLAY = fits the vibe perfectly. ROAST = tolerable but off-vibe. REJECT = completely wrong genre or ruins the vibe. ONE WORD ONLY.',
-      `Vibe: ${vibeName} (${vibeQueries.slice(0,100)}). Song: "${item.title}" by "${item.author}". ONE WORD: PLAY, ROAST, or REJECT?`
+      `You are a strict music vibe guardian. You must reply with EXACTLY one word: PLAY, ROAST, or REJECT. Current vibe: ${vibeName}. This vibe plays: ${vibeTagList}. REJECT any song that is not closely related to the genres and artists in that tag list. Pop, rock, hip-hop, country, R&B, classic rock, Afrobeats, Eurodance are automatic REJECT unless the artist is specifically in the tag list. If in doubt, REJECT. ONE WORD ONLY.`,
+      `Song: "${item.title}" by "${item.author}". Is this artist in the tag list or closely related to the tagged genres? ONE WORD: PLAY, ROAST, or REJECT?`
     );
 
     // Parse decision robustly

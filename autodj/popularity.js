@@ -70,12 +70,22 @@ async function getTrackPopularity(artist, title) {
       const playcount = parseInt(data.track.playcount) || 0;
       const genre = (data.track.toptags && data.track.toptags.tag && data.track.toptags.tag[0] && data.track.toptags.tag[0].name) || null;
 
+      // Extract album art URL (prefer extralarge, fall back to large)
+      let albumArt = null;
+      if (data.track.album && Array.isArray(data.track.album.image)) {
+        const images = data.track.album.image;
+        const xl = images.find(i => i.size === 'extralarge');
+        const lg = images.find(i => i.size === 'large');
+        albumArt = (xl && xl['#text']) || (lg && lg['#text']) || null;
+      }
+
       const entry = {
         artist,
         title,
         listeners,
         playcount,
         genre,
+        albumArt,
         fetchedAt: Date.now(),
       };
 
@@ -188,6 +198,15 @@ function weightedPick(candidates, targetBpm) {
 }
 
 /**
+ * Get cached album art URL for a track, or null if not available.
+ */
+function getAlbumArt(artist, title) {
+  const key = cacheKey(artist, title);
+  const cached = cache[key];
+  return (cached && cached.albumArt) || null;
+}
+
+/**
  * Get cached genre for a track, or null if not available.
  */
 function getGenre(artist, title) {
@@ -220,4 +239,4 @@ function getSkipCount(artist, title) {
 // Initialize cache on load
 loadCache();
 
-module.exports = { getTrackPopularity, prefetchPopularity, weightedPick, saveCache, loadCache, getGenre, getSkipCount };
+module.exports = { getTrackPopularity, prefetchPopularity, weightedPick, saveCache, loadCache, getGenre, getAlbumArt, getSkipCount };

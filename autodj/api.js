@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { getAlbumArt } = require('./popularity');
 
 const SKIP_LOG_FILE = path.join(__dirname, 'skip-log.json');
 const PARTY_STATE_FILE = path.join(__dirname, 'party-state.json');
@@ -94,7 +95,8 @@ function createAPI(autodj) {
         artist,
         title,
         name: title, // alias for compatibility
-        author: artist // alias for compatibility
+        author: artist, // alias for compatibility
+        albumArt: getAlbumArt(artist, title) || null
       });
     }
     res.json({

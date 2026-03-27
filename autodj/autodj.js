@@ -7,7 +7,7 @@ const { Player } = require('./player');
 const { Downloader } = require('./downloader');
 const { getVibeForHour } = require('./vibe-schedules');
 const { createAPI } = require('./api');
-const { weightedPick, prefetchPopularity, saveCache } = require('./popularity');
+const { weightedPick, prefetchPopularity, saveCache, getAlbumArt } = require('./popularity');
 
 const MUSIC_DIR = path.join(os.homedir(), 'Music', 'AutoDJ');
 const CACHE_DIR = path.join(MUSIC_DIR, 'cache');
@@ -304,11 +304,14 @@ class AutoDJ {
       title = parts.slice(1).join(' - ').trim();
     }
 
+    const albumArt = getAlbumArt(artist, title);
+
     const msg = JSON.stringify({
       type: 'nowPlaying',
       title,
       artist,
       author: artist,
+      albumArt: albumArt || null,
       vibe: this.currentVibe ? this.currentVibe.name : null,
       mode: this.mode,
       bpm: track.bpm || null,
