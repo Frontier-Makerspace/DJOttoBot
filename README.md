@@ -98,7 +98,7 @@ This will:
 6. Enable SSH (Remote Login)
 
 Or manually:
-1. Install dependencies: `brew install yt-dlp ffmpeg`
+1. Install dependencies: `brew install yt-dlp ffmpeg ollama`
 2. Start request app: `cd dj-request-app && npm start`
 3. Start AutoDJ bot: `cd autodj && npm start`
 4. Start visualizer: `cd visualizer && npm start`
@@ -110,6 +110,22 @@ Or manually:
 - macOS (uses `afplay` for audio)
 - Node.js 18+
 - yt-dlp + ffmpeg (`brew install yt-dlp ffmpeg`)
+- [Ollama](https://ollama.com) with `llama3.2` (optional but recommended)
+
+**Ollama** powers AI vibe checks, request roasting, and genre detection in the DJ panel. The system runs fine without it — those features are gracefully disabled if Ollama isn't available.
+
+```bash
+# Install Ollama
+brew install ollama
+
+# Pull the required model
+ollama pull llama3.2
+
+# Start the Ollama server (runs on localhost:11434)
+ollama serve
+```
+
+Ollama can also be set to auto-start via launchd — see the [Ollama docs](https://ollama.com/download/mac) for details.
 
 ---
 
