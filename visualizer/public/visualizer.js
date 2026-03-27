@@ -226,7 +226,7 @@
         updateAlbumArt(videoId);
       }
       updateQR(videoId);
-    } else if (albumArt) {
+    } else if (albumArt) {      loadAlbumArtImage(albumArt);
       // Use embedded album art from ID3 tags
       if (albumArtBg) {
         albumArtBg.classList.remove('visible');
@@ -271,9 +271,9 @@
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        if (msg.type === 'nowPlaying') {
+        if (msg.type === "nowPlaying") { console.log("[WS] nowPlaying albumArt:", msg.albumArt);
           const ytId = isYouTubeId(msg.videoId) ? msg.videoId : null;
-          setTrack(msg.title, msg.author, msg.album, ytId, msg.bpm, msg.albumArt);
+          setTrack(msg.title, msg.author, msg.album, ytId, msg.bpm, msg.albumArt); if (msg.albumArt) loadAlbumArtImage(msg.albumArt);
           const vibeName = (typeof msg.vibe === 'string') ? msg.vibe : (msg.vibe && msg.vibe.name);
           if (vibeName) { currentVibe = vibeName; vibeBadge.textContent = vibeName; }
           if (msg.mode) modeIndicator.textContent = msg.mode;
@@ -348,7 +348,7 @@
         const artist = ct.artist || ct.author || 'Unknown';
         const title = ct.title || ct.name || 'Unknown';
         console.log('[Poll] Track:', { title, artist, artist_raw: ct.artist, author_raw: ct.author });
-        setTrack(title, artist, ct.album, ytId, ct.bpm, ct.albumArt || null);
+        setTrack(title, artist, ct.album, ytId, ct.bpm, ct.albumArt || null); if (ct.albumArt) loadAlbumArtImage(ct.albumArt);
 
         // Update vibe display in top bar
         if (data.vibe && vibeBadgeTopEl) {
@@ -590,6 +590,23 @@
   let lastFrame = 0;
   const FRAME_MS = 1000/30;
 
+
+  // --- Album art on canvas ---
+  let _albumArtImg = null;
+  let _albumArtUrl = null;
+  let _albumArtLoaded = false;
+
+  function loadAlbumArtImage(url) {
+    if (!url || url === _albumArtUrl) return;
+    _albumArtUrl = url;
+    _albumArtLoaded = false;
+    var img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = function() { _albumArtImg = img; _albumArtLoaded = true; };
+    img.onerror = function() { _albumArtImg = null; _albumArtLoaded = false; };
+    img.src = url;
+  }
+
   function draw(ts) {
     requestAnimationFrame(draw);
     const delta = ts - lastFrame;
@@ -610,7 +627,7 @@
 
     // Clear upper section with motion blur trail
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height * 0.55);
+    ctx.fillRect(0, 0, canvas.width, canvas.height * 0.55);    // Draw album art background on canvas    if (_albumArtLoaded && _albumArtImg) {      var iw = _albumArtImg.width, ih = _albumArtImg.height;      var sc = Math.max(canvas.width / iw, canvas.height / ih);      var dw = iw * sc, dh = ih * sc;      var dx = (canvas.width - dw) / 2, dy = (canvas.height - dh) / 2;      ctx.save();      ctx.globalAlpha = 0.0;      ctx.drawImage(_albumArtImg, dx, dy, dw, dh);      ctx.restore();    }
 
     // Draw center visualizer (bars or Lissajous)
     drawCenter(freqData, bass);

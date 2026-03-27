@@ -13,11 +13,11 @@
     #album-art-bg {
       position: fixed;
       inset: 0;
-      z-index: -1;
+      z-index: 2;
       background-size: cover;
       background-position: center;
-      filter: blur(40px) brightness(0.3);
-      opacity: 0;
+      filter: blur(12px) brightness(0.5); pointer-events: none;;
+      opacity: 0; mix-blend-mode: screen;
       transition: opacity 1.5s ease;
     }
     #album-art-bg.visible { opacity: 1; }
@@ -81,7 +81,7 @@
       font-size: 1rem;
       max-width: 500px;
       text-align: center;
-      opacity: 0;
+      opacity: 0; mix-blend-mode: screen;
       transition: opacity 0.4s, transform 0.4s;
       z-index: 50;
       pointer-events: none;
@@ -96,7 +96,7 @@
       position: fixed;
       inset: 0;
       z-index: -2;
-      opacity: 0;
+      opacity: 0; mix-blend-mode: screen;
       transition: opacity 1.5s ease;
       pointer-events: none;
     }
@@ -181,6 +181,6 @@
       <span id="track-remaining">0:00</span>
     </div>
   </div>
-  <script src="visualizer.js"></script>
+  <script src="visualizer.js?v=3"></script>
 </body>
 </html>
