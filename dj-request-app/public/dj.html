@@ -57,6 +57,111 @@
       margin-left: 0.5rem;
     }
     .skip-btn:hover { background: #001833; }
+
+    /* Vibes Schedule Editor */
+    .vibes-section {
+      padding: 20px 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .vibes-header {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 1.1rem;
+      color: var(--accent, #00e5ff);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .vibe-card {
+      background: var(--surface, #1a1a1a);
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      font-family: 'Share Tech Mono', monospace;
+    }
+    .vibe-card.vibe-active {
+      border-color: var(--accent, #00e5ff);
+      box-shadow: 0 0 8px rgba(0, 229, 255, 0.2);
+    }
+    .vibe-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .vibe-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text, #fff);
+    }
+    .vibe-active-badge {
+      font-size: 0.65rem;
+      color: #0f8;
+      border: 1px solid #0f8;
+      border-radius: 10px;
+      padding: 1px 8px;
+      text-transform: uppercase;
+    }
+    .vibe-hours {
+      font-size: 0.75rem;
+      color: var(--text-secondary, #aaa);
+    }
+    .vibe-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+      align-items: center;
+    }
+    .vibe-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(0, 229, 255, 0.1);
+      color: var(--accent, #00e5ff);
+      border: 1px solid rgba(0, 229, 255, 0.25);
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 0.75rem;
+      font-family: 'Share Tech Mono', monospace;
+    }
+    .vibe-tag-remove {
+      cursor: pointer;
+      color: var(--danger, #ff4444);
+      font-size: 0.85rem;
+      line-height: 1;
+      margin-left: 2px;
+    }
+    .vibe-tag-remove:hover { color: #ff8888; }
+    .vibe-add-form {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .vibe-add-input {
+      width: 120px;
+      padding: 2px 8px;
+      background: var(--bg, #0d0d0d);
+      color: var(--text, #fff);
+      border: 1px solid #444;
+      border-radius: 10px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.72rem;
+      outline: none;
+    }
+    .vibe-add-input:focus { border-color: var(--accent, #00e5ff); }
+    .vibe-add-btn {
+      padding: 2px 10px;
+      background: transparent;
+      color: var(--accent, #00e5ff);
+      border: 1px solid var(--accent, #00e5ff);
+      border-radius: 10px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    .vibe-add-btn:hover { background: rgba(0, 229, 255, 0.1); }
   </style>
 </head>
 <body class="theme-default">
@@ -165,6 +270,12 @@
       </table>
     </div>
   </main>
+
+  <!-- Vibes Schedule Editor -->
+  <section class="vibes-section">
+    <div class="vibes-header">Vibes Schedule</div>
+    <div id="vibesContainer">Loading vibes...</div>
+  </section>
 
   <script src="dj.js"></script>
 </body>

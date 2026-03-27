@@ -15,10 +15,11 @@ const wss = new WebSocketServer({ server });
 app.use(express.json());
 app.use(express.static('public'));
 
-// --- Queue (in-memory, with pruning) ---
+// --- Queue (in-memory, with pruning + persistence) ---
 const queue = [];
 const QUEUE_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
 const QUEUE_PRUNE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+const QUEUE_STATE_FILE = path.join(__dirname, 'queue-state.json');
 
 // Prune completed/rejected/error items older than QUEUE_MAX_AGE_MS
 function pruneQueue() {
@@ -35,6 +36,40 @@ function pruneQueue() {
   }
 }
 setInterval(pruneQueue, QUEUE_PRUNE_INTERVAL_MS);
+
+// --- Queue persistence ---
+let saveQueueTimer = null;
+function saveQueueDebounced() {
+  if (saveQueueTimer) return;
+  saveQueueTimer = setTimeout(() => {
+    saveQueueTimer = null;
+    try {
+      fs.writeFileSync(QUEUE_STATE_FILE, JSON.stringify(queue, null, 2));
+    } catch (err) {
+      console.error('Failed to save queue state:', err.message);
+    }
+  }, 2000);
+}
+
+// Load persisted queue on startup
+function loadQueue() {
+  try {
+    if (!fs.existsSync(QUEUE_STATE_FILE)) return;
+    const data = JSON.parse(fs.readFileSync(QUEUE_STATE_FILE, 'utf-8'));
+    if (!Array.isArray(data)) return;
+    const now = Date.now();
+    for (const item of data) {
+      const age = now - new Date(item.requestedAt).getTime();
+      if (age < QUEUE_MAX_AGE_MS) {
+        queue.push(item);
+      }
+    }
+    console.log(`[Queue] Restored ${queue.length} items from disk (pruned ${data.length - queue.length} old)`);
+  } catch (err) {
+    console.error('Failed to load queue state:', err.message);
+  }
+}
+loadQueue();
 
 // --- Search Cache ---
 const searchCache = new Map();
@@ -142,8 +177,32 @@ function sanitizeTitle(title, videoId) {
   return (title || videoId || 'track').replace(/[^a-zA-Z0-9_\- ]/g, '').substring(0, 80);
 }
 
+// Find the most recently modified .mp3 file in a directory
+function findLatestMp3(dir, maxAgeMs = 30000) {
+  try {
+    const now = Date.now();
+    let latest = null;
+    let latestMtime = 0;
+    for (const file of fs.readdirSync(dir)) {
+      if (!file.endsWith('.mp3')) continue;
+      const fullPath = path.join(dir, file);
+      const stat = fs.statSync(fullPath);
+      const age = now - stat.mtimeMs;
+      if (age <= maxAgeMs && stat.mtimeMs > latestMtime) {
+        latest = fullPath;
+        latestMtime = stat.mtimeMs;
+      }
+    }
+    return latest;
+  } catch (err) {
+    console.error('findLatestMp3 error:', err.message);
+    return null;
+  }
+}
+
 function downloadAndQueue(item) {
   item.status = 'downloading';
+  saveQueueDebounced();
   broadcast({ type: 'status_update', id: item.id, status: 'downloading', progress: 0 });
 
   const outputTemplate = path.join(OUTPUT_DIR, '%(title)s.%(ext)s');
@@ -173,6 +232,7 @@ function downloadAndQueue(item) {
   proc.on('close', (code) => {
     if (code === 0) {
       item.status = 'done';
+      saveQueueDebounced();
       broadcast({ type: 'status_update', id: item.id, status: 'done', progress: 100 });
       console.log(`Downloaded: ${item.title}`);
 
@@ -181,9 +241,10 @@ function downloadAndQueue(item) {
       if (recentRequests.length > MAX_RECENT) recentRequests.shift();
       if (recentRequests.length >= 3) checkPatternAndShiftVibe().catch(() => {});
 
-      // Queue in AutoDJ with sanitized file path
+      // Find the actual downloaded file (yt-dlp may use a different filename than we'd guess)
+      const actualPath = findLatestMp3(OUTPUT_DIR, 30000);
       const safeTitle = sanitizeTitle(item.title, item.videoId);
-      const filePath = path.join(OUTPUT_DIR, `${safeTitle}.mp3`);
+      const filePath = actualPath || path.join(OUTPUT_DIR, `${safeTitle}.mp3`);
       fetch('http://localhost:3001/queue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -199,6 +260,7 @@ function downloadAndQueue(item) {
         .catch(err => console.error(`AutoDJ queue failed: ${err.message}`));
     } else {
       item.status = 'error';
+      saveQueueDebounced();
       broadcast({ type: 'status_update', id: item.id, status: 'error', progress: 0 });
       console.error(`Download failed for: ${item.title} (exit code ${code})`);
     }
@@ -206,6 +268,7 @@ function downloadAndQueue(item) {
 
   proc.on('error', (err) => {
     item.status = 'error';
+    saveQueueDebounced();
     broadcast({ type: 'status_update', id: item.id, status: 'error', progress: 0 });
     console.error(`yt-dlp spawn error for ${item.title}: ${err.message}`);
   });
@@ -241,6 +304,7 @@ async function checkVibeAndRoast(item) {
       const idx = queue.findIndex(q => q.id === item.id);
       if (idx !== -1) queue[idx].status = 'rejected';
       item.status = 'rejected';
+      saveQueueDebounced();
       console.log(`[Hard Reject] ${item.title}`);
       return;
     }
@@ -264,6 +328,7 @@ async function checkVibeAndRoast(item) {
       const idx = queue.findIndex(q => q.id === item.id);
       if (idx !== -1) queue[idx].status = 'rejected';
       item.status = 'rejected';
+      saveQueueDebounced();
 
       const roast = await ollamaChat(
         'You are DJ Otto, the most ruthless DJ in San Francisco. You have spent 20 years cultivating the perfect taste in music and you have ZERO patience for people who waste it. When someone requests something that ruins the vibe, you eviscerate them publicly and without mercy. Be savage, specific, and personal. No mercy, no softening. 1-2 sentences, end on the kill shot.',
@@ -449,6 +514,7 @@ app.post('/api/request', (req, res) => {
   };
 
   queue.push(item);
+  saveQueueDebounced();
   broadcast({ type: 'new_request', item });
 
   // Feature 3: Vibe check + roast (async, non-blocking)
@@ -487,6 +553,7 @@ app.post('/api/reject/:id', (req, res) => {
   if (item.status !== 'pending') return res.status(400).json({ error: 'Already processed' });
 
   item.status = 'rejected';
+  saveQueueDebounced();
   broadcast({ type: 'status_update', id: item.id, status: 'rejected' });
   res.json({ success: true });
 });
@@ -524,6 +591,29 @@ app.post('/api/otto', express.json(), async (req, res) => {
   } catch (e) {
     res.json({ reply: 'Lost the signal — try again! 🎵' });
   }
+});
+
+// --- Health endpoint ---
+app.get('/health', async (req, res) => {
+  const ytdlp = fs.existsSync(YT_DLP);
+  const ollama = ollamaAvailable;
+
+  let autodj = false;
+  try {
+    const adRes = await fetch('http://localhost:3001/health', { timeout: 2000 });
+    autodj = adRes.ok;
+  } catch {}
+
+  const counts = { total: queue.length, pending: 0, downloading: 0, done: 0, rejected: 0, error: 0 };
+  for (const item of queue) {
+    if (counts[item.status] !== undefined) counts[item.status]++;
+  }
+
+  const allOk = ytdlp && ollama && autodj;
+  res.json({
+    status: allOk ? 'ok' : 'degraded',
+    services: { ytdlp, ollama, autodj, queue: counts },
+  });
 });
 
 // --- Start ---

@@ -292,4 +292,121 @@
   }
 
   connectWS();
+
+  // --- Vibes Schedule Editor ---
+  const vibesContainer = document.getElementById('vibesContainer');
+  let vibesData = [];
+  let activeVibeName = null;
+
+  async function loadVibes() {
+    try {
+      const res = await fetch('http://' + location.hostname + ':3001/vibes');
+      vibesData = await res.json();
+    } catch (e) {
+      vibesContainer.textContent = 'Failed to load vibes schedule.';
+      return;
+    }
+    // Determine active vibe based on current hour
+    const hour = new Date().getHours();
+    activeVibeName = null;
+    for (const vibe of vibesData) {
+      if (vibe.hours && isHourInRange(hour, vibe.hours)) {
+        activeVibeName = vibe.name;
+        break;
+      }
+    }
+    renderVibes();
+  }
+
+  function isHourInRange(hour, hours) {
+    if (!hours || hours.length !== 2) return false;
+    const [start, end] = hours;
+    if (start <= end) return hour >= start && hour < end;
+    return hour >= start || hour < end; // wraps midnight
+  }
+
+  function renderVibes() {
+    if (!vibesData.length) {
+      vibesContainer.textContent = 'No vibes configured.';
+      return;
+    }
+    vibesContainer.innerHTML = vibesData.map(vibe => {
+      const isActive = vibe.name === activeVibeName;
+      const hoursStr = vibe.hours ? formatHour(vibe.hours[0]) + ' – ' + formatHour(vibe.hours[1]) : '';
+      const tagsHtml = (vibe.tags || []).map(tag =>
+        '<span class="vibe-tag">' + esc(tag) +
+        ' <span class="vibe-tag-remove" data-vibe="' + esc(vibe.name) + '" data-tag="' + esc(tag) + '">&times;</span></span>'
+      ).join('');
+      return '<div class="vibe-card' + (isActive ? ' vibe-active' : '') + '">' +
+        '<div class="vibe-card-header">' +
+          '<span class="vibe-name">' + esc(vibe.name) + '</span>' +
+          (isActive ? '<span class="vibe-active-badge">active</span>' : '') +
+          '<span class="vibe-hours">' + esc(hoursStr) + '</span>' +
+        '</div>' +
+        '<div class="vibe-tags">' +
+          tagsHtml +
+          '<span class="vibe-add-form">' +
+            '<input class="vibe-add-input" data-vibe="' + esc(vibe.name) + '" placeholder="new tag..." />' +
+            '<button class="vibe-add-btn" data-vibe="' + esc(vibe.name) + '">Add</button>' +
+          '</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    // Attach event listeners
+    vibesContainer.querySelectorAll('.vibe-tag-remove').forEach(el => {
+      el.addEventListener('click', function() {
+        removeVibeTag(this.dataset.vibe, this.dataset.tag);
+      });
+    });
+    vibesContainer.querySelectorAll('.vibe-add-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const input = vibesContainer.querySelector('.vibe-add-input[data-vibe="' + this.dataset.vibe + '"]');
+        const tag = input.value.trim();
+        if (tag) addVibeTag(this.dataset.vibe, tag);
+      });
+    });
+    vibesContainer.querySelectorAll('.vibe-add-input').forEach(input => {
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          const tag = this.value.trim();
+          if (tag) addVibeTag(this.dataset.vibe, tag);
+        }
+      });
+    });
+  }
+
+  function formatHour(h) {
+    if (h === 0) return '12am';
+    if (h === 12) return '12pm';
+    return h < 12 ? h + 'am' : (h - 12) + 'pm';
+  }
+
+  async function addVibeTag(vibeName, tag) {
+    try {
+      await fetch('http://' + location.hostname + ':3001/vibes/' + encodeURIComponent(vibeName) + '/tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ add: [tag] })
+      });
+      await loadVibes();
+    } catch (e) {
+      console.error('Failed to add tag:', e);
+    }
+  }
+
+  async function removeVibeTag(vibeName, tag) {
+    try {
+      await fetch('http://' + location.hostname + ':3001/vibes/' + encodeURIComponent(vibeName) + '/tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remove: [tag] })
+      });
+      await loadVibes();
+    } catch (e) {
+      console.error('Failed to remove tag:', e);
+    }
+  }
+
+  loadVibes();
 })();
