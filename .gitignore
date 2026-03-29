@@ -6,3 +6,7 @@ cache/
 .env
 .DS_Store
 popularity-cache.json
+party-state.json
+skip-log.json
+vibe-config.json
+queue-state.json

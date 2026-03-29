@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
+const { detectBPM } = require('./player');
 
 const LASTFM_API_KEY = '66750419e224e3ee4433e46456e0e5b4';
 const LASTFM_BASE = 'http://ws.audioscrobbler.com/2.0/';
@@ -67,12 +68,24 @@ async function getTrackPopularity(artist, title) {
     if (data.track) {
       const listeners = parseInt(data.track.listeners) || 0;
       const playcount = parseInt(data.track.playcount) || 0;
+      const genre = (data.track.toptags && data.track.toptags.tag && data.track.toptags.tag[0] && data.track.toptags.tag[0].name) || null;
+
+      // Extract album art URL (prefer extralarge, fall back to large)
+      let albumArt = null;
+      if (data.track.album && Array.isArray(data.track.album.image)) {
+        const images = data.track.album.image;
+        const xl = images.find(i => i.size === 'extralarge');
+        const lg = images.find(i => i.size === 'large');
+        albumArt = (xl && xl['#text']) || (lg && lg['#text']) || null;
+      }
 
       const entry = {
         artist,
         title,
         listeners,
         playcount,
+        genre,
+        albumArt,
         fetchedAt: Date.now(),
       };
 
@@ -115,6 +128,15 @@ async function prefetchPopularity(tracks) {
     await getTrackPopularity(track.artist, track.title);
     fetched++;
 
+    // Detect BPM if not cached and file path is available
+    const key2 = cacheKey(track.artist, track.title);
+    if (cache[key2] && !cache[key2].bpm && track.path) {
+      try {
+        const bpm = await detectBPM(track.path, 'Afternoon');
+        cache[key2].bpm = bpm;
+      } catch(_) {}
+    }
+
     if (fetched % 50 === 0) {
       console.log(`[Popularity] Prefetch progress: ${fetched} fetched, ${skipped} cached`);
       saveCache();
@@ -131,26 +153,34 @@ async function prefetchPopularity(tracks) {
  * less popular ones still have a chance.
  *
  * @param {Array} candidates - tracks with { artist, title, path, ... }
+ * @param {number|null} targetBpm - if provided, boost tracks with similar BPM
  * @returns {Object|null} selected track (with .popularity added)
  */
-function weightedPick(candidates) {
+function weightedPick(candidates, targetBpm) {
   if (!candidates || candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0];
 
-  // Get listener counts from cache
+  // Get listener counts and BPM from cache
   const withPop = candidates.map(t => {
     const key = cacheKey(t.artist, t.title);
     const cached = cache[key];
     const listeners = (cached && cached.listeners) || 0;
-    return { ...t, listeners };
+    const bpm = (cached && cached.bpm) || null;
+    return { ...t, listeners, bpm };
   });
 
   // Use log scale so mega-hits don't completely dominate
   // Add a floor of 100 so uncached tracks still have a chance
-  const withWeights = withPop.map(t => ({
-    ...t,
-    weight: Math.log10(Math.max(t.listeners, 100)),
-  }));
+  // Apply BPM boost: ±10 BPM → 2x, ±20 BPM → 1.5x, others → 1x
+  const withWeights = withPop.map(t => {
+    let weight = Math.log10(Math.max(t.listeners, 100));
+    if (targetBpm && t.bpm) {
+      const bpmDiff = Math.abs(t.bpm - targetBpm);
+      if (bpmDiff <= 10) weight *= 2;
+      else if (bpmDiff <= 20) weight *= 1.5;
+    }
+    return { ...t, weight };
+  });
 
   const totalWeight = withWeights.reduce((sum, t) => sum + t.weight, 0);
 
@@ -167,7 +197,55 @@ function weightedPick(candidates) {
   return withWeights[withWeights.length - 1];
 }
 
+/**
+ * Get cached album art URL for a track, or null if not available.
+ */
+function getAlbumArt(artist, title) {
+  const key = cacheKey(artist, title);
+  const cached = cache[key];
+  return (cached && cached.albumArt) || null;
+}
+
+/**
+ * Get cached genre for a track, or null if not available.
+ */
+function getGenre(artist, title) {
+  const key = cacheKey(artist, title);
+  const cached = cache[key];
+  return (cached && cached.genre) || null;
+}
+
+/**
+ * Get how many times a track has been skipped (from skip-log.json).
+ */
+const SKIP_LOG_FILE = path.join(__dirname, 'skip-log.json');
+
+function getSkipCount(artist, title) {
+  try {
+    if (!fs.existsSync(SKIP_LOG_FILE)) return 0;
+    const skips = JSON.parse(fs.readFileSync(SKIP_LOG_FILE, 'utf8'));
+    const a = artist.toLowerCase().trim();
+    const t = title.toLowerCase().trim();
+    return skips.filter(s =>
+      s.artist && s.title &&
+      s.artist.toLowerCase().trim() === a &&
+      s.title.toLowerCase().trim() === t
+    ).length;
+  } catch {
+    return 0;
+  }
+}
+
+// Clear and re-fetch all cache entries
+function clearCache() {
+  cache = {};
+  try {
+    if (fs.existsSync(CACHE_FILE)) fs.unlinkSync(CACHE_FILE);
+  } catch {}
+  console.log('[Popularity] Cache cleared');
+}
+
 // Initialize cache on load
 loadCache();
 
-module.exports = { getTrackPopularity, prefetchPopularity, weightedPick, saveCache, loadCache };
+module.exports = { getTrackPopularity, prefetchPopularity, weightedPick, saveCache, loadCache, clearCache, getGenre, getAlbumArt, getSkipCount };

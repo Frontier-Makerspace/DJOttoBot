@@ -7,7 +7,6 @@ const { Player } = require('./player');
 const { Downloader } = require('./downloader');
 const { getVibeForHour } = require('./vibe-schedules');
 const { createAPI } = require('./api');
-const { weightedPick, prefetchPopularity, saveCache, getAlbumArt } = require('./popularity');
 
 const MUSIC_DIR = path.join(os.homedir(), 'Music', 'AutoDJ');
 const CACHE_DIR = path.join(MUSIC_DIR, 'cache');
@@ -55,16 +54,8 @@ class AutoDJ {
     this.recentlyPlayed = new Set();
     this.recentlyPlayedQueue = [];
 
-    // Track artist play counts per hour (max 3 per artist per hour)
-    this.artistPlayLog = []; // { artist, timestamp }
-    this.ARTIST_HOURLY_LIMIT = 3;
-
-    // WebSocket server clients for broadcasting nowPlaying
-    this.wsClients = new Set();
-
     this.player.on('started', (track) => {
       log(`▶ Playing: ${track.title}`);
-      this._broadcastNowPlaying(track);
     });
     this.player.on('finished', (track) => {
       log(`✓ Finished: ${track ? track.title : 'unknown'}`);
@@ -85,13 +76,6 @@ class AutoDJ {
   }
 
   overrideVibe(vibeName) {
-    if (vibeName === 'auto' || vibeName === 'clear' || !vibeName) {
-      this.vibeOverride = null;
-      this.vibeOverrideExpires = null;
-      this.currentVibe = getVibeForHour(new Date().getHours());
-      log(`Vibe override cleared — back to schedule: ${this.currentVibe.name}`);
-      return;
-    }
     const vibeMap = {
       'Late Night': getVibeForHour(2),
       'Afternoon': getVibeForHour(9),
@@ -101,40 +85,13 @@ class AutoDJ {
     };
     const vibe = vibeMap[vibeName] || getVibeForHour(new Date().getHours());
     this.vibeOverride = vibe;
-    // Auto-expire override after 2 hours
-    this.vibeOverrideExpires = Date.now() + 2 * 60 * 60 * 1000;
     this.currentVibe = vibe;
-    log(`Vibe override: ${vibeName} (tags: ${vibe.tags.join(', ')}) — expires in 2h`);
+    log(`Vibe override: ${vibeName} (tags: ${vibe.tags.join(', ')})`);
   }
 
   get effectiveVibe() {
-    if (this.vibeOverride) {
-      // Auto-expire vibe overrides
-      if (this.vibeOverrideExpires && Date.now() > this.vibeOverrideExpires) {
-        log(`Vibe override expired — returning to schedule`);
-        this.vibeOverride = null;
-        this.vibeOverrideExpires = null;
-      } else {
-        return this.vibeOverride;
-      }
-    }
+    if (this.vibeOverride) return this.vibeOverride;
     return getVibeForHour(new Date().getHours());
-  }
-
-  // --- Artist hourly limit ---
-
-  isArtistOverLimit(artist) {
-    if (!artist || artist === 'Unknown') return false;
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    // Prune old entries
-    this.artistPlayLog = this.artistPlayLog.filter(e => e.timestamp > oneHourAgo);
-    const count = this.artistPlayLog.filter(e => e.artist.toLowerCase() === artist.toLowerCase()).length;
-    return count >= this.ARTIST_HOURLY_LIMIT;
-  }
-
-  logArtistPlay(artist) {
-    if (!artist || artist === 'Unknown') return;
-    this.artistPlayLog.push({ artist, timestamp: Date.now() });
   }
 
   // --- Recently played tracking ---
@@ -155,97 +112,47 @@ class AutoDJ {
    * Pick a random track from the local library matching a random tag from the current vibe.
    * Avoids recently played tracks. Returns track object or null.
    */
-  pickLocalTrack(excludePath) {
+  pickLocalTrack() {
     const vibe = this.effectiveVibe;
     if (!vibe.tags || vibe.tags.length === 0) {
       log(`Vibe "${vibe.name}" has no tags configured`);
       return null;
     }
 
-    // Get the last played artist to avoid back-to-back same artist
-    const lastArtist = this.lastPlayedArtist || null;
-
-    // Shuffle tags so we try different ones if the first yields no fresh results
-    const shuffledTags = [...vibe.tags].sort(() => Math.random() - 0.5);
+    // Pick a random tag
+    const tag = vibe.tags[Math.floor(Math.random() * vibe.tags.length)];
     const searchEngine = this.downloader.searchEngine;
 
-    for (const tag of shuffledTags) {
-      // Search with a low threshold to cast a wide net, then filter
-      const results = searchEngine.search(tag, 0.7);
+    // Search with a low threshold to cast a wide net, then filter
+    const results = searchEngine.search(tag, 0.7);
 
-      if (!results || results.length === 0) continue;
-
-      // Filter out recently played, excluded track, same artist as last played,
-      // AND artists that have hit their hourly limit (3 per hour)
-      const fresh = results.filter(r =>
-        !this.recentlyPlayed.has(r.path) &&
-        (!excludePath || r.path !== excludePath) &&
-        (!lastArtist || r.artist.toLowerCase() !== lastArtist.toLowerCase()) &&
-        !this.isArtistOverLimit(r.artist)
-      );
-
-      // If filtering by artist left nothing, try without the back-to-back filter
-      // but still respect the hourly limit
-      const candidates = fresh.length > 0 ? fresh : results.filter(r =>
-        !this.recentlyPlayed.has(r.path) &&
-        (!excludePath || r.path !== excludePath) &&
-        !this.isArtistOverLimit(r.artist)
-      );
-
-      // If all results for this tag are recently played, try the next tag
-      if (candidates.length === 0) continue;
-
-      // Weighted pick by popularity (popular tracks more likely)
-      // Pass current BPM for BPM-aware selection
-      const currentBpm = (this.player.currentTrack && this.player.currentTrack.bpm) || null;
-      const poolSize = Math.min(candidates.length, 30);
-      const pool = candidates.slice(0, poolSize);
-      const pick = weightedPick(pool, currentBpm);
-
-      if (!pick || !fs.existsSync(pick.path)) continue;
-
-      const popStr = pick.popularity ? ` pop: ${pick.popularity.toLocaleString()} listeners` : '';
-      log(`🎵 Selected: "${pick.artist} - ${pick.title}" (tag: ${tag}, confidence: ${(pick.confidence * 100).toFixed(0)}%, vibe: ${vibe.name}${popStr})`);
-
-      return {
-        title: `${pick.artist} - ${pick.title}`,
-        artist: pick.artist || 'Unknown',
-        filePath: pick.path,
-        source: 'local-search',
-        tag,
-        duration: null,
-      };
-    }
-
-    // All tags exhausted with no fresh results — fall back to any random track
-    // from the full library to avoid repeats
-    log(`All tags exhausted for vibe "${vibe.name}" — picking random from full library`);
-    const allTracks = searchEngine.index.filter(t =>
-      !this.recentlyPlayed.has(t.path) &&
-      (!excludePath || t.path !== excludePath) &&
-      (!lastArtist || t.artist.toLowerCase() !== lastArtist.toLowerCase()) &&
-      !this.isArtistOverLimit(t.artist) &&
-      fs.existsSync(t.path)
-    );
-
-    if (allTracks.length === 0) {
-      log(`No fresh tracks available at all — clearing recently played`);
-      this.recentlyPlayed.clear();
-      this.recentlyPlayedQueue = [];
+    if (!results || results.length === 0) {
+      log(`No results for tag "${tag}" in vibe "${vibe.name}"`);
       return null;
     }
 
-    const currentBpm = (this.player.currentTrack && this.player.currentTrack.bpm) || null;
-    const pick = weightedPick(allTracks, currentBpm);
-    const popStr = pick.popularity ? ` pop: ${pick.popularity.toLocaleString()} listeners` : '';
-    log(`🎵 Selected (random fallback): "${pick.artist} - ${pick.title}" (vibe: ${vibe.name}${popStr})`);
+    // Filter out recently played
+    const fresh = results.filter(r => !this.recentlyPlayed.has(r.path));
+    const candidates = fresh.length > 0 ? fresh : results; // fall back to all if everything was recently played
+
+    // Pick a random track from a wider pool for more variety
+    // Use up to 30 candidates and pick randomly (not just top 10)
+    const poolSize = Math.min(candidates.length, 30);
+    const pick = candidates[Math.floor(Math.random() * poolSize)];
+
+    if (!pick || !fs.existsSync(pick.path)) {
+      log(`Picked track doesn't exist: ${pick ? pick.path : 'null'}`);
+      return null;
+    }
+
+    log(`🎵 Selected: "${pick.artist} - ${pick.title}" (tag: ${tag}, confidence: ${(pick.confidence * 100).toFixed(0)}%, vibe: ${vibe.name})`);
 
     return {
       title: `${pick.artist} - ${pick.title}`,
       artist: pick.artist || 'Unknown',
       filePath: pick.path,
-      source: 'local-random',
-      tag: 'random',
+      source: 'local-search',
+      tag,
       duration: null,
     };
   }
@@ -259,9 +166,7 @@ class AutoDJ {
 
     this.predownloading = true;
     try {
-      // Exclude the currently playing track so preload never picks the same song
-      const currentPath = this.player.currentTrack ? this.player.currentTrack.filePath : null;
-      const track = this.pickLocalTrack(currentPath);
+      const track = this.pickLocalTrack();
       if (track) {
         this.predownloadedTrack = track;
         log(`Pre-loaded next: "${track.title}"`);
@@ -271,63 +176,6 @@ class AutoDJ {
     } finally {
       this.predownloading = false;
     }
-  }
-
-  // --- Get next track for crossfade ---
-
-  _getNextTrack(excludePath) {
-    if (this.playbackQueue.length > 0) {
-      return this.playbackQueue.shift();
-    }
-    if (this.predownloadedTrack) {
-      const t = this.predownloadedTrack;
-      this.predownloadedTrack = null;
-      return t;
-    }
-    if (this.mode === 'BOT') {
-      return this.pickLocalTrack(excludePath);
-    }
-    return null;
-  }
-
-  // --- Broadcast nowPlaying to connected WS clients on port 3001 ---
-
-  _broadcastNowPlaying(track) {
-    if (!track || this.wsClients.size === 0) return;
-
-    // Parse artist/title from track.title (format: "Artist - Title")
-    let artist = track.artist || 'Unknown';
-    let title = track.title || '';
-    if (title.includes(' - ')) {
-      const parts = title.split(' - ');
-      artist = parts[0].trim();
-      title = parts.slice(1).join(' - ').trim();
-    }
-
-    const albumArt = getAlbumArt(artist, title);
-
-    const msg = JSON.stringify({
-      type: 'nowPlaying',
-      title,
-      artist,
-      author: artist,
-      albumArt: albumArt || null,
-      vibe: this.currentVibe ? this.currentVibe.name : null,
-      mode: this.mode,
-      bpm: track.bpm || null,
-      duration: track.duration || null,
-      startedAt: track.startedAt || new Date().toISOString(),
-      videoId: track.videoId || null,
-    });
-
-    for (const client of this.wsClients) {
-      try {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(msg);
-        }
-      } catch {}
-    }
-    log(`Broadcast nowPlaying to ${this.wsClients.size} client(s)`);
   }
 
   // --- WebSocket connection to dj-request-app ---
@@ -469,63 +317,23 @@ class AutoDJ {
             continue;
           }
 
-          // Mark as recently played, track artist for no-repeat logic, and log hourly count
+          // Mark as recently played
           this.markPlayed(track.filePath);
-          this.lastPlayedArtist = track.artist || null;
-          this.logArtistPlay(track.artist);
 
           // Start pre-loading next track in background
           this.preloadNext();
 
-          // Play and wait for completion, with crossfade if possible
+          // Play and wait for completion
           try {
-            const playPromise = this.player.play(track.filePath, track.title, this.currentVibe.name);
-
-            // Check if we can schedule a crossfade
-            const trackDuration = this.player.currentTrack && this.player.currentTrack.duration;
-            let didCrossfade = false;
-
-            if (trackDuration && trackDuration > 10 && this.player.crossfadeMs > 0) {
-              // Wait until ~5 seconds before end to attempt crossfade
-              const crossfadeWaitMs = Math.max(0, (trackDuration - 5) * 1000);
-
-              const result = await Promise.race([
-                playPromise.then(() => 'finished'),
-                sleep(crossfadeWaitMs).then(() => 'crossfade'),
-              ]);
-
-              if (result === 'crossfade' && this.player.isPlaying()) {
-                const nextTrack = this._getNextTrack(track.filePath);
-
-                if (nextTrack && nextTrack.filePath && fs.existsSync(nextTrack.filePath)) {
-                  this.markPlayed(nextTrack.filePath);
-                  this.lastPlayedArtist = nextTrack.artist || null;
-                  this.logArtistPlay(nextTrack.artist);
-
-                  log(`🔀 Crossfading to: "${nextTrack.title}"`);
-                  await this.player.crossfadeTo(nextTrack.filePath, nextTrack.title, this.currentVibe.name);
-                  didCrossfade = true;
-                  this.preloadNext();
-                  continue; // skip gap, new track already playing
-                }
-
-                // No next track available — wait for current to finish normally
-                await playPromise;
-              }
-              // result === 'finished' means track ended before crossfade point
-            } else {
-              // No duration or too short — wait for normal completion
-              await playPromise;
-            }
-
-            if (!didCrossfade) {
-              await sleep(TRACK_GAP_MS);
-            }
+            await this.player.play(track.filePath, track.title, this.currentVibe.name);
           } catch (err) {
             log(`Playback error: ${err.message}`);
             await sleep(2000);
             continue;
           }
+
+          // Gap between tracks
+          await sleep(TRACK_GAP_MS);
         }
 
       } catch (err) {
@@ -565,30 +373,13 @@ class AutoDJ {
     log(`Library: ${this.downloader.searchEngine.index.length} tracks indexed`);
     log(`Vibe: ${this.effectiveVibe.name} (tags: ${this.effectiveVibe.tags.join(', ')})`);
 
-    // Prefetch popularity data in background (doesn't block playback)
-    const searchEngine = this.downloader.searchEngine;
-    prefetchPopularity(searchEngine.index).catch(err => {
-      log(`Popularity prefetch error: ${err.message}`);
-    });
-
     // Connect to request app
     this.connectWS();
 
-    // Start API with WebSocket server for nowPlaying broadcasts
+    // Start API
     const app = createAPI(this);
-    const http = require('http');
-    const server = http.createServer(app);
-    const wss = new WebSocket.Server({ server });
-    wss.on('connection', (ws) => {
-      this.wsClients.add(ws);
-      log(`WS client connected (${this.wsClients.size} total)`);
-      ws.on('close', () => {
-        this.wsClients.delete(ws);
-        log(`WS client disconnected (${this.wsClients.size} total)`);
-      });
-    });
-    server.listen(API_PORT, () => {
-      log(`API + WS listening on port ${API_PORT}`);
+    app.listen(API_PORT, () => {
+      log(`API listening on port ${API_PORT}`);
     });
 
     // Start state writer
@@ -612,7 +403,6 @@ process.on('SIGINT', () => {
   log('Shutting down...');
   dj.running = false;
   dj.player.stop();
-  saveCache();
   process.exit(0);
 });
 
@@ -620,6 +410,5 @@ process.on('SIGTERM', () => {
   log('Shutting down...');
   dj.running = false;
   dj.player.stop();
-  saveCache();
   process.exit(0);
 });

@@ -75,8 +75,8 @@ function connectUpstream(url, label) {
 connectUpstream('ws://localhost:3000', 'dj-request-app');
 connectUpstream('ws://localhost:3001', 'autodj');
 
-// Poll autodj status as fallback — includes videoId and bpm
-let lastVideoId = null;
+// Fallback poll at 30s in case WS messages are missed
+// Primary path is the upstream WebSocket 'nowPlaying' events above
 setInterval(async () => {
   try {
     const res = await fetch('http://localhost:3001/status');
@@ -100,7 +100,7 @@ setInterval(async () => {
       });
     }
   } catch (e) { /* autodj not available */ }
-}, 5000);
+}, 30000);
 
 const PORT = 3002;
 server.listen(PORT, () => {
